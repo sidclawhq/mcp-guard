@@ -1,0 +1,41 @@
+# SidClaw MCP Guard — Policy Configuration
+#
+# Rules are evaluated top-to-bottom. First match wins.
+# If no rule matches, the default action applies.
+#
+# Actions:
+#   allow   — tool call passes through to upstream
+#   deny    — tool call is blocked, agent receives error
+#   approve — tool call is held for human approval
+
+rules:
+  # Safe: read-only queries pass through
+  - name: allow-reads
+    description: Allow SELECT queries
+    match:
+      tool: query
+      args:
+        sql: "^\\s*SELECT"
+    action: allow
+
+  # Risky: data mutations need human approval
+  - name: approve-mutations
+    description: Require approval for data changes
+    match:
+      tool: query
+      args:
+        sql: "^\\s*(DELETE|UPDATE|INSERT)"
+    action: approve
+
+  # Dangerous: schema operations are blocked
+  - name: deny-destructive
+    description: Block destructive schema operations
+    match:
+      tool: query
+      args:
+        sql: "^\\s*(DROP|TRUNCATE|ALTER)"
+    action: deny
+    reason: "Destructive schema operations are blocked by policy"
+
+# Default: deny anything not explicitly matched
+default: deny

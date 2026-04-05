@@ -1,0 +1,62 @@
+{
+  "name": "sidclaw-mcp-guard",
+  "version": "0.1.0",
+  "description": "Stop AI agents from doing dangerous things through MCP. Guard any MCP server with allow/deny/approve policies.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "SidClaw <hello@sidclaw.com>",
+  "homepage": "https://github.com/sidclawhq/mcp-guard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sidclawhq/mcp-guard.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-safety",
+    "guardrails",
+    "tool-call",
+    "approval",
+    "policy",
+    "agent",
+    "claude",
+    "cursor",
+    "governance"
+  ],
+  "bin": {
+    "sidclaw-mcp-guard": "dist/cli.js",
+    "sidclaw-guard": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "sidclaw.config.yaml",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "demo": "node dist/cli.js demo",
+    "clean": "rm -rf dist .sidclaw"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.7.0"
+  }
+}

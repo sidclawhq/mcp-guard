@@ -1,0 +1,59 @@
+# SQL Demo — Guard a PostgreSQL MCP server
+#
+# This config protects a PostgreSQL database from destructive agent actions.
+#
+# Usage:
+#   sidclaw-mcp-guard \
+#     --config examples/sql-demo/sidclaw.config.yaml \
+#     --upstream npx \
+#     --upstream-args "-y,@modelcontextprotocol/server-postgres,postgresql://localhost/mydb"
+
+rules:
+  # Safe: read-only queries
+  - name: allow-reads
+    description: Allow SELECT queries
+    match:
+      tool: query
+      args:
+        sql: "^\\s*SELECT"
+    action: allow
+
+  # Safe: EXPLAIN plans for optimization
+  - name: allow-explain
+    description: Allow EXPLAIN queries
+    match:
+      tool: query
+      args:
+        sql: "^\\s*EXPLAIN"
+    action: allow
+
+  # Risky: single-row mutations need approval
+  - name: approve-mutations
+    description: Require approval for data changes
+    match:
+      tool: query
+      args:
+        sql: "^\\s*(DELETE|UPDATE|INSERT)"
+    action: approve
+
+  # Dangerous: schema changes are blocked
+  - name: deny-schema-changes
+    description: Block all DDL operations
+    match:
+      tool: query
+      args:
+        sql: "^\\s*(DROP|TRUNCATE|ALTER|CREATE)"
+    action: deny
+    reason: "Schema modifications are blocked. Use a migration tool instead."
+
+  # Dangerous: permission changes are blocked
+  - name: deny-permission-changes
+    description: Block GRANT/REVOKE
+    match:
+      tool: query
+      args:
+        sql: "^\\s*(GRANT|REVOKE)"
+    action: deny
+    reason: "Permission changes must go through your DBA."
+
+default: deny
