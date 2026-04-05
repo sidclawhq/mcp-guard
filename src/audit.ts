@@ -36,7 +36,10 @@ export class AuditLog {
     if (!existsSync(this.path)) return [];
     const content = readFileSync(this.path, 'utf-8').trim();
     if (!content) return [];
-    return content.split('\n').map((line) => JSON.parse(line) as AuditEntry);
+    return content
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line) as AuditEntry);
   }
 
   /**
