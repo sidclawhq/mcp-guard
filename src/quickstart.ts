@@ -9,6 +9,7 @@ import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { startUIServer } from './ui.js';
 import { ApprovalQueue } from './approval.js';
+import { SHIELD_MINI } from './banner.js';
 
 const QUICKSTART_CONFIG = `# SidClaw Guard — Quickstart config
 # This file was created by "sidclaw-mcp-guard quickstart"
@@ -41,8 +42,9 @@ export async function runQuickstart(options: { uiPort?: number } = {}): Promise<
   const uiPort = options.uiPort ?? 9091;
 
   w('\n');
-  w('\x1b[1m🛡️  SidClaw Guard — Quickstart\x1b[0m\n');
-  w('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  w(SHIELD_MINI + '\n\n');
+  w('  \x1b[1mQuickstart\x1b[0m — setting up a real guarded MCP server\n');
+  w('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   w('\n');
 
   // 1. Create config if needed

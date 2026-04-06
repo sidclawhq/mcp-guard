@@ -8,6 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { evaluate } from './policy.js';
 import { AuditLog } from './audit.js';
+import { SHIELD, flowAllow, flowHold, flowBlock } from './banner.js';
 import type { PolicyRule } from './types.js';
 
 const DEMO_RULES: PolicyRule[] = [
@@ -50,17 +51,10 @@ export async function runDemo(interactive: boolean = false): Promise<void> {
   try { writeFileSync('.sidclaw/audit.jsonl', ''); } catch { /* ignore */ }
   const audit = new AuditLog('.sidclaw/audit.jsonl');
 
+  w(SHIELD);
   w('\n');
-  w('\x1b[1m🛡️  SidClaw Guard — Live Policy Demo\x1b[0m\n');
-  w('\n');
-  w('  The policy engine and audit trail below are real.\n');
-  w('  The database is simulated so you don\'t need one.\n');
-  w('\n');
-  w('  \x1b[2mRules loaded:\x1b[0m\n');
-  w('    allow-reads       \x1b[32m→ allow\x1b[0m   (SELECT, EXPLAIN)\n');
-  w('    approve-writes    \x1b[33m→ hold\x1b[0m    (DELETE, UPDATE, INSERT)\n');
-  w('    deny-destructive  \x1b[31m→ block\x1b[0m   (DROP, TRUNCATE, ALTER)\n');
-  w('    default: deny\n');
+  w('  \x1b[2mThe policy engine and audit trail are real.\x1b[0m\n');
+  w('  \x1b[2mThe database is simulated so you don\'t need one.\x1b[0m\n');
   w('\n');
 
   if (interactive) {
@@ -70,7 +64,7 @@ export async function runDemo(interactive: boolean = false): Promise<void> {
   }
 
   // Show audit trail
-  w('  \x1b[2m─── Audit (.sidclaw/audit.jsonl) ───\x1b[0m\n\n');
+  w('  \x1b[2m─── Audit log (.sidclaw/audit.jsonl) ───\x1b[0m\n\n');
   for (const entry of audit.read()) {
     const icon = entry.decision === 'allow' ? '\x1b[32m✔\x1b[0m'
       : entry.decision === 'deny' ? '\x1b[31m✘\x1b[0m' : '\x1b[33m⏳\x1b[0m';
@@ -95,7 +89,6 @@ async function showcaseMode(
 ): Promise<void> {
   for (const test of SHOWCASE) {
     evaluateAndPrint(w, audit, test.sql, test.mockResult);
-    w('\n');
   }
 }
 
@@ -105,15 +98,13 @@ async function interactiveMode(
 ): Promise<void> {
   const readline = await import('node:readline');
 
-  // First show the three showcase queries
-  w('  \x1b[2m─── Showcase ───\x1b[0m\n\n');
+  // Show the three showcase queries first
   for (const test of SHOWCASE) {
     evaluateAndPrint(w, audit, test.sql, test.mockResult);
-    w('\n');
   }
 
   // Then let the user try their own
-  w('  \x1b[2m─── Try your own ───\x1b[0m\n\n');
+  w('  \x1b[2m─────────────────────────────────────────────────\x1b[0m\n\n');
   w('  Type a SQL query to see how the guard evaluates it.\n');
   w('  Press Ctrl+C or type "exit" to quit.\n\n');
 
@@ -124,9 +115,7 @@ async function interactiveMode(
     rl.on('line', (line: string) => {
       const sql = line.trim();
       if (!sql || sql === 'exit' || sql === 'quit') { rl.close(); resolve(); return; }
-      w('\n');
       evaluateAndPrint(w, audit, sql);
-      w('\n');
       rl.prompt();
     });
     rl.on('close', resolve);
@@ -144,17 +133,19 @@ function evaluateAndPrint(
   const result = evaluate('query', { sql }, DEMO_RULES, 'deny');
 
   if (result.action === 'allow') {
-    w(`  \x1b[32m✔ ALLOW\x1b[0m  ${sql}\n`);
+    w(flowAllow('query', sql));
     w(`    ${result.explanation}\n`);
     if (mockResult) w(`    \x1b[2m→ ${mockResult}\x1b[0m\n`);
   } else if (result.action === 'approve') {
-    w(`  \x1b[33m⏳ HOLD\x1b[0m   ${sql}\n`);
+    w(flowHold('query', sql));
     w(`    ${result.explanation}\n`);
     if (mockResult) w(`    \x1b[2m→ Would forward after approval: ${mockResult}\x1b[0m\n`);
   } else {
-    w(`  \x1b[31m✘ BLOCK\x1b[0m  ${sql}\n`);
+    w(flowBlock('query', sql));
     w(`    ${result.explanation}\n`);
   }
+
+  w('\n');
 
   audit.write({
     timestamp: new Date().toISOString(),
