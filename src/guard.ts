@@ -24,7 +24,7 @@ import type { GuardConfig } from './types.js';
 import { evaluate } from './policy.js';
 import { AuditLog } from './audit.js';
 import { ApprovalQueue } from './approval.js';
-import { SID_MINI } from './banner.js';
+import { SID_MINI, sidReaction } from './banner.js';
 
 export class MCPGuard {
   private server: Server;
@@ -76,7 +76,7 @@ export class MCPGuard {
       // ---- DENY ----
       if (result.action === 'deny') {
         const reason = result.reason ?? `Denied by policy${result.rule ? `: ${result.rule.name}` : ''}`;
-        this.log(`\x1b[31m✘ DENIED\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
+        this.log(sidReaction('deny'));
         this.log(`  ${result.explanation}`);
 
         this.audit.write({
@@ -107,7 +107,7 @@ export class MCPGuard {
       // ---- APPROVE ----
       if (result.action === 'approve') {
         if (observing) {
-          this.log(`\x1b[33m⏳ WOULD REQUIRE APPROVAL\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
+          this.log(sidReaction('approve') + modeTag);
           this.log(`  ${result.explanation}`);
 
           this.audit.write({
@@ -134,7 +134,7 @@ export class MCPGuard {
           result.explanation,
         );
 
-        this.log(`\x1b[33m⏳ APPROVAL REQUIRED\x1b[0m  ${toolName}  ${this.summarize(args)}`);
+        this.log(sidReaction('approve'));
         this.log(`  ${result.explanation}`);
         this.log(`  Approve: npx sidclaw-mcp-guard approve ${pending.id}`);
         this.log(`  Deny:    npx sidclaw-mcp-guard deny ${pending.id}`);
@@ -193,10 +193,7 @@ export class MCPGuard {
       }
 
       // ---- ALLOW ----
-      this.log(`\x1b[32m✔ ALLOWED\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
-      if (result.rule) {
-        this.log(`  ${result.explanation}`);
-      }
+      this.log(sidReaction('allow') + modeTag);
 
       this.audit.write({
         timestamp: new Date().toISOString(),

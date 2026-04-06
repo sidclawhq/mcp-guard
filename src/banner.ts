@@ -1,99 +1,88 @@
 /**
- * Terminal art — Sid the crab mascot, flow visualizations.
+ * Sid — the SidClaw guard crab.
  *
- * "Sid" is the SidClaw guard crab. Three moods:
- *   happy    — claws down, smiling (allow)
- *   thinking — claws out, uncertain (hold for approval)
- *   angry    — claws up, blocking (deny)
+ * Three moods matching the three decision types:
+ *   happy    (^‿^)  claws down — allow
+ *   thinking (°_°)  claws out  — hold for approval
+ *   angry    (>_<)  claws up   — deny/block
  */
 
 // Colors
-const R = '\x1b[0m';       // reset
-const B = '\x1b[34m';      // blue
-const G = '\x1b[32m';      // green
-const Y = '\x1b[33m';      // yellow/amber
-const RED = '\x1b[31m';    // red
-const D = '\x1b[2m';       // dim
-const BOLD = '\x1b[1m';    // bold
-const C = '\x1b[36m';      // cyan
-const M = '\x1b[35m';      // magenta
+const R = '\x1b[0m';
+const B = '\x1b[34m';
+const G = '\x1b[32m';
+const Y = '\x1b[33m';
+const RED = '\x1b[31m';
+const D = '\x1b[2m';
+const BOLD = '\x1b[1m';
+const C = '\x1b[36m';
 
 // ─────────────────────────────────────────────────
-//  Sid — the SidClaw crab
+//  Sid — full art (4 lines, compact)
 // ─────────────────────────────────────────────────
 
-/**
- * Sid: happy — claws down, all is well.
- * Shown when the guard allows a call.
- */
-export const SID_HAPPY = `${B}      .~^~^~.${R}
-${B} \\)${R}  ${B}/${R}  ${G}o   o${R}  ${B}\\${R}  ${B}(/${R}
-${B}     ${R}|   ${G}\\${R}${G}_/${R}   |
-${B}      \\_____/${R}`;
+export const SID_HAPPY = [
+  `${B}    .~^~^~.${R}`,
+  `${B}\\)${R} ${B}/${R}  ${G}^${R}   ${G}^${R}  ${B}\\${R} ${B}(/  ${R}`,
+  `${B}   ${R}|  ${G}\\__/${R}  |`,
+  `${B}    \\_____/${R}`,
+].join('\n');
 
-/**
- * Sid: thinking — claws out, uncertain, waiting.
- * Shown when a call needs approval.
- */
-export const SID_THINKING = `${B}      .~^~^~.${R}
-${B} \\)${R}  ${B}/${R}  ${Y}o   o${R}  ${B}\\${R}  ${B}(/${R}
-${B}     ${R}|   ${Y}---${R}   |
-${B}      \\_____/${R}`;
+export const SID_THINKING = [
+  `${B}    .~^~^~.${R}`,
+  `${B}\\)${R} ${B}/${R}  ${Y}o${R}   ${Y}o${R}  ${B}\\${R} ${B}(/  ${R}`,
+  `${B}   ${R}|  ${Y} -- ${R} |`,
+  `${B}    \\_____/${R}`,
+].join('\n');
 
-/**
- * Sid: angry — claws raised, blocking.
- * Shown when the guard denies a call.
- */
-export const SID_ANGRY = `${B}      .~^~^~.${R}
-${B} /)${R}  ${B}/${R}  ${RED}x   x${R}  ${B}\\${R}  ${B}(\\${R}
-${B}     ${R}|   ${RED}___${R}   |
-${B}      \\_____/${R}`;
+export const SID_ANGRY = [
+  `${B}    .~^~^~.${R}`,
+  `${B}/)${R} ${B}/${R}  ${RED}>${R}   ${RED}<${R}  ${B}\\${R} ${B}(\\  ${R}`,
+  `${B}   ${R}|  ${RED} /\\${R}  |`,
+  `${B}    \\_____/${R}`,
+].join('\n');
 
-/**
- * Sid: standing guard — the main banner.
- * Shown on demo start, quickstart.
- */
+// ─────────────────────────────────────────────────
+//  Banner — Sid + product name, 4 lines total
+// ─────────────────────────────────────────────────
+
 export const SID_BANNER = `
-${B}          .~^~^~^~^~.${R}
-${B}    \\)${R}   ${B}/${R}  ${C}o${R}       ${C}o${R}  ${B}\\${R}   ${B}(/  ${R}
-${B}         ${R}|    ${BOLD}\\_/${R}     |
-${B}          \\_________/${R}
-${B}          / | | | | \\${R}
-                            ${BOLD}S I D C L A W${R}
-                            ${BOLD}G U A R D${R}
-                            ${D}MCP guardrails${R}
+${B}    .~^~^~.${R}
+${B}\\)${R} ${B}/${R}  ${C}o${R}   ${C}o${R}  ${B}\\${R} ${B}(/  ${R}  ${BOLD}S I D C L A W   G U A R D${R}
+${B}   ${R}|  ${BOLD}\\__/${R}  |    ${D}MCP guardrails for dangerous tool calls${R}
+${B}    \\_____/${R}
 `;
 
-/**
- * Sid mini — compact inline version for guard startup.
- */
-export const SID_MINI = `${B}.~^~.${R}
-${B}/${R} ${C}o o${R} ${B}\\${R}  ${BOLD}SidClaw Guard${R}
-${B}\\${R} ${D}v${R} ${B}/${R}   ${D}MCP guardrails${R}
-${B} ~-~${R}`;
+// ─────────────────────────────────────────────────
+//  Mini — for guard startup, 3 lines
+// ─────────────────────────────────────────────────
 
-/**
- * Inline crab reactions — single line, shown after each decision.
- */
+export const SID_MINI = [
+  `${B} .~^~.${R}`,
+  `${B}/${R}${C}o${R}   ${C}o${R}${B}\\${R}  ${BOLD}SidClaw Guard${R}`,
+  `${B} \\${R}${D}v${R}${B}/${R}    ${D}MCP guardrails${R}`,
+].join('\n');
+
+// ─────────────────────────────────────────────────
+//  Inline reactions — 1 line each
+// ─────────────────────────────────────────────────
+
 export function sidReaction(decision: 'allow' | 'deny' | 'approve'): string {
   switch (decision) {
     case 'allow':
-      return `    ${B}\\)${R}${G}(^‿^)${R}${B}(/  ${R}${D}Looks safe!${R}`;
+      return `    ${B}\\)${G}(^‿^)${B}(/  ${R}${D}Looks safe!${R}`;
     case 'approve':
-      return `    ${B}\\)${R}${Y}(°_°)${R}${B}(/  ${R}${D}Hmm, needs a human look...${R}`;
+      return `    ${B}\\)${Y}(°_°)${B}(/  ${R}${D}Hmm, let a human check this one...${R}`;
     case 'deny':
-      return `    ${B}/)${R}${RED}(>_<)${R}${B}(\\  ${R}${D}Nope. Blocked.${R}`;
+      return `    ${B}/)${RED}(>_<)${B}(\\  ${R}${D}No way. Blocked.${R}`;
   }
 }
 
 // ─────────────────────────────────────────────────
-//  Flow diagrams
+//  Flow checkpoint diagrams
 // ─────────────────────────────────────────────────
 
-/**
- * Flow diagram showing an ALLOWED tool call.
- */
-export function flowAllow(tool: string, summary: string): string {
+export function flowAllow(_tool: string, summary: string): string {
   const s = summary.length > 35 ? summary.substring(0, 32) + '...' : summary;
   return `
 ${D}  ┌────────┐      ┌────────────┐      ┌──────────┐${R}
@@ -101,14 +90,10 @@ ${D}  │${R} Agent  ${D}│${R}${C}─────▶${R}${D}│${R}${B} ▪ Gu
 ${D}  └────────┘      └─────┬──────┘      └──────────┘${R}
                         ${G}│${R}
                    ${G}✔ ALLOWED${R}
-                   ${D}${s}${R}
-`;
+                   ${D}${s}${R}`;
 }
 
-/**
- * Flow diagram showing a HELD tool call.
- */
-export function flowHold(tool: string, summary: string): string {
+export function flowHold(_tool: string, summary: string): string {
   const s = summary.length > 35 ? summary.substring(0, 32) + '...' : summary;
   return `
 ${D}  ┌────────┐      ┌────────────┐      ┌──────────┐${R}
@@ -116,14 +101,10 @@ ${D}  │${R} Agent  ${D}│${R}${C}─────▶${R}${D}│${R}${B} ▪ Gu
 ${D}  └────────┘      └─────┬──────┘      └──────────┘${R}
                         ${Y}│${R}
                    ${Y}⏳ HELD FOR APPROVAL${R}
-                   ${D}${s}${R}
-`;
+                   ${D}${s}${R}`;
 }
 
-/**
- * Flow diagram showing a BLOCKED tool call.
- */
-export function flowBlock(tool: string, summary: string): string {
+export function flowBlock(_tool: string, summary: string): string {
   const s = summary.length > 35 ? summary.substring(0, 32) + '...' : summary;
   return `
 ${D}  ┌────────┐      ┌────────────┐      ┌──────────┐${R}
@@ -131,17 +112,5 @@ ${D}  │${R} Agent  ${D}│${R}${C}─────▶${R}${D}│${R}${B} ▪ Gu
 ${D}  └────────┘      └─────┬──────┘      └──────────┘${R}
                         ${RED}│${R}
                    ${RED}✘ BLOCKED${R}
-                   ${D}${s}${R}
-`;
-}
-
-/**
- * Compact decision badge for list/audit display.
- */
-export function badge(decision: 'allow' | 'deny' | 'approve'): string {
-  switch (decision) {
-    case 'allow': return `${G}▪ allow${R}`;
-    case 'deny': return `${RED}▪ block${R}`;
-    case 'approve': return `${Y}▪ hold${R}`;
-  }
+                   ${D}${s}${R}`;
 }
