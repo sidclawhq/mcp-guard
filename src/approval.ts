@@ -143,7 +143,7 @@ export class ApprovalQueue {
 
         // Remove stale undecided approvals (older than maxAge)
         const age = now - new Date(data.timestamp).getTime();
-        if (age > maxAgeMs) {
+        if (age >= maxAgeMs) {
           unlinkSync(filePath);
           removed++;
         }
