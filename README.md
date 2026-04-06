@@ -17,13 +17,7 @@
 </p>
 
 <p align="center">
-
-```
-SELECT * FROM users         →  ✅ Allowed     (forwarded to database)
-DELETE FROM users WHERE ...  →  ⏳ Held        (waiting for your approval)
-DROP TABLE users             →  🚫 Blocked     (never reaches database)
-```
-
+  <img src="assets/guard-flow.png" alt="Guard decision flow: SELECT allowed, DELETE held for approval, DROP TABLE blocked" width="700" />
 </p>
 
 ---
