@@ -1,10 +1,11 @@
 /**
- * Sid — the SidClaw guard crab.
+ * Sid — the SidClaw Guard mascot.
  *
+ * A friendly badger with claws and a shield.
  * Three moods matching the three decision types:
- *   happy    (^‿^)  claws down — allow
- *   thinking (°_°)  claws out  — hold for approval
- *   angry    (>_<)  claws up   — deny/block
+ *   happy    — shield up, all clear (allow)
+ *   thinking — shield raised, uncertain (hold for approval)
+ *   angry    — claws out, blocking (deny)
  */
 
 // Colors
@@ -16,65 +17,42 @@ const RED = '\x1b[31m';
 const D = '\x1b[2m';
 const BOLD = '\x1b[1m';
 const C = '\x1b[36m';
+const BR = '\x1b[33m';     // brown (yellow serves as brown)
 
 // ─────────────────────────────────────────────────
-//  Sid — full art (4 lines, compact)
+//  Sid — the badger guard
 // ─────────────────────────────────────────────────
 
-export const SID_HAPPY = [
-  `${B}    .~^~^~.${R}`,
-  `${B}\\)${R} ${B}/${R}  ${G}^${R}   ${G}^${R}  ${B}\\${R} ${B}(/  ${R}`,
-  `${B}   ${R}|  ${G}\\__/${R}  |`,
-  `${B}    \\_____/${R}`,
-].join('\n');
-
-export const SID_THINKING = [
-  `${B}    .~^~^~.${R}`,
-  `${B}\\)${R} ${B}/${R}  ${Y}o${R}   ${Y}o${R}  ${B}\\${R} ${B}(/  ${R}`,
-  `${B}   ${R}|  ${Y} -- ${R} |`,
-  `${B}    \\_____/${R}`,
-].join('\n');
-
-export const SID_ANGRY = [
-  `${B}    .~^~^~.${R}`,
-  `${B}/)${R} ${B}/${R}  ${RED}>${R}   ${RED}<${R}  ${B}\\${R} ${B}(\\  ${R}`,
-  `${B}   ${R}|  ${RED} /\\${R}  |`,
-  `${B}    \\_____/${R}`,
-].join('\n');
-
-// ─────────────────────────────────────────────────
-//  Banner — Sid + product name, 4 lines total
-// ─────────────────────────────────────────────────
-
+/**
+ * Banner — Sid with product name. For demo and quickstart.
+ */
 export const SID_BANNER = `
-${B}    .~^~^~.${R}
-${B}\\)${R} ${B}/${R}  ${C}o${R}   ${C}o${R}  ${B}\\${R} ${B}(/  ${R}  ${BOLD}S I D C L A W   G U A R D${R}
-${B}   ${R}|  ${BOLD}\\__/${R}  |    ${D}MCP guardrails for dangerous tool calls${R}
-${B}    \\_____/${R}
+${BR}    (\\  /)${R}
+${BR}    ( ${C}o${R}${BR}.${C}o${R}${BR} )${R}     ${BOLD}S I D C L A W   G U A R D${R}
+${BR}    /${R} ${B}[${BOLD}✓${R}${B}]${R} ${BR}\\${R}     ${D}MCP guardrails for dangerous tool calls${R}
+${BR}   ^^${R}${B} ▀▀▀${R} ${BR}^^${R}
 `;
 
-// ─────────────────────────────────────────────────
-//  Mini — for guard startup, 3 lines
-// ─────────────────────────────────────────────────
-
+/**
+ * Mini — compact version for guard proxy startup.
+ */
 export const SID_MINI = [
-  `${B} .~^~.${R}`,
-  `${B}/${R}${C}o${R}   ${C}o${R}${B}\\${R}  ${BOLD}SidClaw Guard${R}`,
-  `${B} \\${R}${D}v${R}${B}/${R}    ${D}MCP guardrails${R}`,
+  `${BR}(\\${C}o${BR}.${C}o${BR}/)${R}  ${BOLD}SidClaw Guard${R}`,
+  `${BR} /${R}${B}[✓]${R}${BR}\\${R}   ${D}MCP guardrails${R}`,
 ].join('\n');
 
 // ─────────────────────────────────────────────────
-//  Inline reactions — 1 line each
+//  Inline reactions — 1 line each, after decisions
 // ─────────────────────────────────────────────────
 
 export function sidReaction(decision: 'allow' | 'deny' | 'approve'): string {
   switch (decision) {
     case 'allow':
-      return `    ${B}\\)${G}(^‿^)${B}(/  ${R}${D}Looks safe!${R}`;
+      return `    ${BR}(\\${G}^${BR}.${G}^${BR}/)${R} ${B}[${G}✓${B}]${R}  ${D}Looks safe!${R}`;
     case 'approve':
-      return `    ${B}\\)${Y}(°_°)${B}(/  ${R}${D}Hmm, let a human check this one...${R}`;
+      return `    ${BR}(\\${Y}o${BR}.${Y}o${BR}/)${R} ${B}[${Y}?${B}]${R}  ${D}Hmm, let a human check this one...${R}`;
     case 'deny':
-      return `    ${B}/)${RED}(>_<)${B}(\\  ${R}${D}No way. Blocked.${R}`;
+      return `    ${BR}(\\${RED}>${BR}.${RED}<${BR}/)${R} ${B}[${RED}✘${B}]${R}  ${D}No way. Blocked.${R}`;
   }
 }
 

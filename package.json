@@ -38,6 +38,7 @@
   },
   "files": [
     "dist",
+    "assets",
     "sidclaw.config.yaml",
     "LICENSE",
     "README.md"

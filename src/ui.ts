@@ -7,6 +7,9 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ApprovalQueue } from './approval.js';
 import { AuditLog } from './audit.js';
 
@@ -22,6 +25,8 @@ const HTML_PAGE = `<!DOCTYPE html>
 
   /* Header */
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { width: 40px; height: 40px; }
   h1 { font-size: 22px; font-weight: 600; }
   .status { font-size: 12px; display: flex; align-items: center; gap: 6px; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
@@ -69,7 +74,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 </head>
 <body>
 <div class="header">
-  <h1>&#x1f6e1;&#xfe0f; SidClaw Guard</h1>
+  <div class="brand"><img src="/mascot.png" alt="Sid" onerror="this.style.display='none'"><h1>SidClaw Guard</h1></div>
   <div class="status"><span class="status-dot" id="dot"></span><span class="status-text" id="statusText">Connecting...</span></div>
 </div>
 
@@ -205,6 +210,24 @@ export async function startUIServer(options: UIServerOptions = {}): Promise<{ po
     if (req.method === 'GET' && path === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(HTML_PAGE);
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/mascot.png') {
+      // Try to find mascot image in assets/ (relative to cwd or package root)
+      const candidates = [
+        resolve('assets/mascot.png'),
+        resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'mascot.png'),
+      ];
+      for (const p of candidates) {
+        if (existsSync(p)) {
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+          res.end(readFileSync(p));
+          return;
+        }
+      }
+      res.writeHead(404);
+      res.end();
       return;
     }
 

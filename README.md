@@ -1,20 +1,30 @@
 <p align="center">
+  <img src="assets/mascot.png" alt="Sid — the SidClaw Guard mascot" width="180" />
+</p>
+
+<h1 align="center">sidclaw-mcp-guard</h1>
+
+<p align="center">
+  <strong>Stop AI agents from doing dangerous things through MCP.</strong>
+  <br />
+  <em>Wraps any MCP server. Allows safe calls. Blocks dangerous ones. Holds the rest for you.</em>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/MCP-guardrails-blue" alt="MCP guardrails" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License" />
   <img src="https://img.shields.io/badge/local--first-no%20signup-orange" alt="Local-first" />
 </p>
 
-# sidclaw-mcp-guard
-
-### Stop AI agents from doing dangerous things through MCP.
-
-SidClaw Guard wraps any MCP server and enforces **allow / block / hold-for-approval** rules on every tool call. No signup, no API keys — just a YAML file.
+<p align="center">
 
 ```
 SELECT * FROM users         →  ✅ Allowed     (forwarded to database)
 DELETE FROM users WHERE ...  →  ⏳ Held        (waiting for your approval)
 DROP TABLE users             →  🚫 Blocked     (never reaches database)
 ```
+
+</p>
 
 ---
 
@@ -32,7 +42,7 @@ npx sidclaw-mcp-guard@latest demo
 npx sidclaw-mcp-guard@latest quickstart
 ```
 
-This creates a config, starts the approval dashboard, and prints the MCP config to paste into Claude Code or Cursor.
+Creates a config, starts the approval dashboard, and prints the MCP config to paste into Claude Code or Cursor.
 
 <!-- TODO: terminal recording GIF -->
 
