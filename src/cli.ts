@@ -4,6 +4,7 @@
  * Usage:
  *   sidclaw-mcp-guard                          Start the guard proxy
  *   sidclaw-mcp-guard demo [--interactive]     Run the SQL demo
+ *   sidclaw-mcp-guard ui                       Start the approval dashboard
  *   sidclaw-mcp-guard approve <id>             Approve a pending request
  *   sidclaw-mcp-guard deny <id>                Deny a pending request
  *   sidclaw-mcp-guard list                     List pending approvals
@@ -15,6 +16,7 @@ import { loadConfig, defaultConfig } from './config.js';
 import { MCPGuard } from './guard.js';
 import { ApprovalQueue } from './approval.js';
 import { runDemo } from './demo.js';
+import { startUIServer } from './ui.js';
 import type { GuardConfig } from './types.js';
 
 const VERSION = '0.1.0';
@@ -28,6 +30,7 @@ Stop AI agents from doing dangerous things through MCP.
 \x1b[1mUSAGE\x1b[0m
   sidclaw-mcp-guard [options]                Start the guard proxy
   sidclaw-mcp-guard demo [--interactive]     Run the SQL demo
+  sidclaw-mcp-guard ui [--port 9091]         Start the local approval dashboard
   sidclaw-mcp-guard approve <id>             Approve a pending request
   sidclaw-mcp-guard deny <id>                Deny a pending request
   sidclaw-mcp-guard list                     List pending approvals
@@ -36,6 +39,9 @@ Stop AI agents from doing dangerous things through MCP.
   --config, -c <path>     Config file (default: sidclaw.config.yaml)
   --upstream <cmd>        Upstream MCP server command
   --upstream-args <args>  Comma-separated args for upstream
+  --observe               Observe mode: log decisions but forward all calls
+  --ui                    Start the approval dashboard alongside the proxy
+  --ui-port <port>        Dashboard port (default: 9091)
   --approval-dir <dir>    Approval queue directory (default: .sidclaw/pending)
   --help, -h              Show this help
   --version, -v           Show version
@@ -43,6 +49,9 @@ Stop AI agents from doing dangerous things through MCP.
 \x1b[1mEXAMPLES\x1b[0m
   npx sidclaw-mcp-guard demo
   npx sidclaw-mcp-guard --upstream npx --upstream-args "-y,@modelcontextprotocol/server-postgres,postgresql://localhost/mydb"
+  npx sidclaw-mcp-guard --ui --upstream npx --upstream-args "-y,@modelcontextprotocol/server-postgres,postgresql://localhost/mydb"
+  npx sidclaw-mcp-guard --observe --upstream npx --upstream-args "-y,@modelcontextprotocol/server-filesystem,/tmp"
+  npx sidclaw-mcp-guard ui
   npx sidclaw-mcp-guard approve a1b2c3d4
 
 \x1b[1mDOCS\x1b[0m
@@ -50,32 +59,28 @@ Stop AI agents from doing dangerous things through MCP.
 `);
 }
 
-function parseArgs(argv: string[]): {
-  command: 'proxy' | 'demo' | 'approve' | 'deny' | 'list' | 'help' | 'version';
+type Command = 'proxy' | 'demo' | 'ui' | 'approve' | 'deny' | 'list' | 'help' | 'version';
+
+interface ParsedArgs {
+  command: Command;
   configPath: string;
   upstream?: string;
   upstreamArgs?: string[];
   approvalDir?: string;
   interactive: boolean;
   approvalId?: string;
-} {
-  type Command = 'proxy' | 'demo' | 'approve' | 'deny' | 'list' | 'help' | 'version';
-  const result: {
-    command: Command;
-    configPath: string;
-    interactive: boolean;
-    upstream: string | undefined;
-    upstreamArgs: string[] | undefined;
-    approvalDir: string | undefined;
-    approvalId: string | undefined;
-  } = {
+  observe: boolean;
+  ui: boolean;
+  uiPort?: number;
+}
+
+function parseArgs(argv: string[]): ParsedArgs {
+  const result: ParsedArgs = {
     command: 'proxy',
     configPath: 'sidclaw.config.yaml',
     interactive: false,
-    upstream: undefined as string | undefined,
-    upstreamArgs: undefined as string[] | undefined,
-    approvalDir: undefined as string | undefined,
-    approvalId: undefined as string | undefined,
+    observe: false,
+    ui: false,
   };
 
   const args = argv.slice(2);
@@ -86,6 +91,9 @@ function parseArgs(argv: string[]): {
     switch (arg) {
       case 'demo':
         result.command = 'demo';
+        break;
+      case 'ui':
+        if (result.command === 'proxy') result.command = 'ui';
         break;
       case 'approve':
         result.command = 'approve';
@@ -122,6 +130,18 @@ function parseArgs(argv: string[]): {
       case '--interactive':
         result.interactive = true;
         break;
+      case '--observe':
+        result.observe = true;
+        break;
+      case '--ui':
+        result.ui = true;
+        break;
+      case '--ui-port':
+        result.uiPort = parseInt(args[++i] ?? '9091', 10);
+        break;
+      case '--port':
+        result.uiPort = parseInt(args[++i] ?? '9091', 10);
+        break;
     }
   }
 
@@ -143,6 +163,25 @@ async function main(): Promise<void> {
     case 'demo':
       await runDemo(parsed.interactive);
       return;
+
+    case 'ui': {
+      // Standalone approval dashboard
+      const uiPort = parsed.uiPort ?? 9091;
+      const approvalDir = parsed.approvalDir ?? '.sidclaw/pending';
+      const auditPath = getAuditPath(parsed);
+
+      const { port } = await startUIServer({
+        port: uiPort,
+        approvalDir,
+        auditPath,
+      });
+
+      process.stderr.write(`\n\x1b[1m🛡️  SidClaw Guard — Approval Dashboard\x1b[0m\n`);
+      process.stderr.write(`   http://localhost:${port}\n\n`);
+      process.stderr.write(`   Approve or deny pending requests from your browser.\n`);
+      process.stderr.write(`   Press Ctrl+C to stop.\n\n`);
+      return;
+    }
 
     case 'approve':
     case 'deny': {
@@ -188,7 +227,8 @@ async function main(): Promise<void> {
       }
       process.stderr.write(
         `Approve: npx sidclaw-mcp-guard approve <id>\n` +
-        `Deny:    npx sidclaw-mcp-guard deny <id>\n\n`,
+        `Deny:    npx sidclaw-mcp-guard deny <id>\n` +
+        `Or open: npx sidclaw-mcp-guard ui\n\n`,
       );
       return;
     }
@@ -219,10 +259,14 @@ async function main(): Promise<void> {
           args: parsed.upstreamArgs,
         };
       }
+      if (parsed.observe) {
+        config.mode = 'observe';
+      }
       if (parsed.approvalDir) {
         config.approval = { ...config.approval, dir: parsed.approvalDir };
       }
 
+      // Start guard proxy
       const guard = new MCPGuard(config);
 
       try {
@@ -231,9 +275,33 @@ async function main(): Promise<void> {
         process.stderr.write(`Error: ${(err as Error).message}\n`);
         process.exit(1);
       }
+
+      // Start UI alongside proxy if requested
+      if (parsed.ui) {
+        const uiPort = parsed.uiPort ?? 9091;
+        const approvalDir = config.approval?.dir ?? '.sidclaw/pending';
+        const auditPath = config.audit?.path ?? '.sidclaw/audit.jsonl';
+
+        try {
+          const { port } = await startUIServer({ port: uiPort, approvalDir, auditPath });
+          process.stderr.write(`[sidclaw]    Dashboard: http://localhost:${port}\n`);
+        } catch (err) {
+          process.stderr.write(`[sidclaw] Warning: could not start UI on port ${uiPort}: ${(err as Error).message}\n`);
+        }
+      }
       return;
     }
   }
+}
+
+function getAuditPath(parsed: ParsedArgs): string {
+  if (existsSync(resolve(parsed.configPath))) {
+    try {
+      const config = loadConfig(resolve(parsed.configPath));
+      return config.audit?.path ?? '.sidclaw/audit.jsonl';
+    } catch { /* ignore */ }
+  }
+  return '.sidclaw/audit.jsonl';
 }
 
 function summarize(args: Record<string, unknown>): string {

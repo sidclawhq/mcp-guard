@@ -5,6 +5,9 @@
 /** Policy decision for a tool call. */
 export type Action = 'allow' | 'deny' | 'approve';
 
+/** Guard operating mode. */
+export type GuardMode = 'enforce' | 'observe';
+
 /** A single policy rule. */
 export interface PolicyRule {
   /** Unique rule name. */
@@ -30,6 +33,8 @@ export interface GuardConfig {
   rules: PolicyRule[];
   /** Default action when no rule matches. */
   default: Action;
+  /** Operating mode: enforce (block/hold) or observe (log only, forward all). */
+  mode?: GuardMode;
   /** Upstream MCP server to wrap. */
   upstream?: {
     command: string;
@@ -70,6 +75,8 @@ export interface AuditEntry {
   approval_id?: string;
   status?: 'pending' | 'approved' | 'denied' | 'expired';
   duration_ms?: number;
+  /** Present only in observe mode. */
+  observe?: boolean;
 }
 
 /** A pending approval request. */

@@ -1,0 +1,55 @@
+# Filesystem Demo — Guard a filesystem MCP server
+#
+# Protects file operations: reads allowed, writes need approval, deletes blocked.
+#
+# Usage:
+#   sidclaw-mcp-guard \
+#     --config examples/filesystem-demo/sidclaw.config.yaml \
+#     --upstream npx \
+#     --upstream-args "-y,@modelcontextprotocol/server-filesystem,/path/to/dir"
+
+rules:
+  # Safe: read operations
+  - name: allow-reads
+    match:
+      tool: read_file
+    action: allow
+
+  - name: allow-list
+    match:
+      tool: list_directory
+    action: allow
+
+  - name: allow-search
+    match:
+      tool: search_files
+    action: allow
+
+  - name: allow-info
+    match:
+      tool: get_file_info
+    action: allow
+
+  # Risky: write operations need approval
+  - name: approve-writes
+    match:
+      tool: write_file
+    action: approve
+
+  - name: approve-edits
+    match:
+      tool: edit_file
+    action: approve
+
+  - name: approve-move
+    match:
+      tool: move_file
+    action: approve
+
+  # Dangerous: directory creation needs approval
+  - name: approve-mkdir
+    match:
+      tool: create_directory
+    action: approve
+
+default: deny

@@ -122,6 +122,20 @@ sidclaw-mcp-guard --upstream npx --upstream-args "-y,@modelcontextprotocol/serve
 
 CLI flags override config file values.
 
+## Mode
+
+```yaml
+mode: enforce    # Default — block denied calls, hold approvals
+mode: observe    # Log decisions but forward all calls
+```
+
+Can also be set via CLI:
+```bash
+sidclaw-mcp-guard --observe
+```
+
+In observe mode, the guard evaluates every call but never blocks. Useful for testing policies before enforcing them. Audit entries include `observe: true` so you can tell the difference.
+
 ## Audit
 
 ```yaml

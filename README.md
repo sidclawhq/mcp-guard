@@ -101,17 +101,31 @@ The guard intercepts every tool call. Safe ones pass through. Dangerous ones are
 
 ---
 
-## Approve or deny from your terminal
+## Approve or deny
 
-When a tool call requires approval, the guard tells you what to do:
+When a tool call requires approval, you have two options:
+
+### Option A: Local dashboard
+
+Start the approval UI alongside the proxy:
+
+```bash
+sidclaw-mcp-guard --ui --upstream npx --upstream-args "..."
+```
+
+Open `http://localhost:9091` — approve or deny with one click.
+
+<!-- TODO: screenshot of approval dashboard -->
+
+Or run it standalone: `npx sidclaw-mcp-guard ui`
+
+### Option B: Terminal
 
 ```
 [sidclaw] ⏳ APPROVAL REQUIRED  query  DELETE FROM users WHERE id = 42
 [sidclaw]   Approve: npx sidclaw-mcp-guard approve a1b2c3d4
 [sidclaw]   Deny:    npx sidclaw-mcp-guard deny a1b2c3d4
 ```
-
-In another terminal:
 
 ```bash
 npx sidclaw-mcp-guard list            # See pending approvals
@@ -181,17 +195,37 @@ Every decision is logged to `.sidclaw/audit.jsonl`:
 
 ---
 
+## Observe mode
+
+Not ready to enforce yet? Run in **observe** mode — the guard logs what it *would* do but forwards all calls:
+
+```bash
+sidclaw-mcp-guard --observe --upstream npx --upstream-args "..."
+```
+
+```
+[sidclaw] ✘ DENIED  query  DROP TABLE users  [observe]
+[sidclaw] ⏳ WOULD REQUIRE APPROVAL  query  DELETE FROM users  [observe]
+[sidclaw] ✔ ALLOWED  query  SELECT * FROM users  [observe]
+```
+
+Observe mode lets you test your policies before enforcing them. Every decision is still logged to the audit trail (marked with `observe: true`).
+
+Switch to enforce mode when ready by removing `--observe` or setting `mode: enforce` in config.
+
+---
+
 ## Works with any MCP server
 
 Guard any stdio MCP server — just point `--upstream` at it:
 
-| Server | What you're guarding |
-|--------|---------------------|
-| `@modelcontextprotocol/server-postgres` | SQL queries |
-| `@modelcontextprotocol/server-filesystem` | File operations |
-| `@modelcontextprotocol/server-github` | Repo operations |
-| `@modelcontextprotocol/server-slack` | Slack messages |
-| Any custom MCP server | Any tool calls |
+| Server | What you're guarding | Example config |
+|--------|---------------------|----------------|
+| `@modelcontextprotocol/server-postgres` | SQL queries | [examples/sql-demo](examples/sql-demo/) |
+| `@modelcontextprotocol/server-filesystem` | File operations | [examples/filesystem-demo](examples/filesystem-demo/) |
+| `@modelcontextprotocol/server-github` | Repo operations | |
+| `@modelcontextprotocol/server-slack` | Slack messages | |
+| Any custom MCP server | Any tool calls | |
 
 ---
 
@@ -199,8 +233,11 @@ Guard any stdio MCP server — just point `--upstream` at it:
 
 ```bash
 sidclaw-mcp-guard                          # Start the guard proxy
+sidclaw-mcp-guard --observe                # Observe mode (log only)
+sidclaw-mcp-guard --ui                     # Start proxy + approval dashboard
 sidclaw-mcp-guard demo                     # Run the SQL demo
 sidclaw-mcp-guard demo --interactive       # Interactive demo (manual approval)
+sidclaw-mcp-guard ui                       # Standalone approval dashboard
 sidclaw-mcp-guard approve <id>             # Approve a pending request
 sidclaw-mcp-guard deny <id>                # Deny a pending request
 sidclaw-mcp-guard list                     # List pending approvals

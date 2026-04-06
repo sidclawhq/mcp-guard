@@ -454,6 +454,120 @@ test('Config with comma-separated upstream args string', () => {
   assert(c.upstream?.args?.[1] === 'some-server');
 });
 
+console.log('\n=== OBSERVE MODE TESTS ===\n');
+
+test('Config with mode: observe', () => {
+  writeFileSync('.sidclaw/observe.yaml', [
+    'rules:',
+    '  - name: r1',
+    '    match:',
+    '      tool: query',
+    '    action: allow',
+    'default: deny',
+    'mode: observe',
+  ].join('\n'));
+  const c = loadConfig('.sidclaw/observe.yaml');
+  assert(c.mode === 'observe', `got ${c.mode}`);
+});
+
+test('Config with mode: enforce', () => {
+  writeFileSync('.sidclaw/enforce.yaml', [
+    'rules: []',
+    'default: deny',
+    'mode: enforce',
+  ].join('\n'));
+  const c = loadConfig('.sidclaw/enforce.yaml');
+  assert(c.mode === 'enforce');
+});
+
+test('Config with no mode defaults to undefined', () => {
+  const c = loadConfig('sidclaw.config.yaml');
+  assert(c.mode === undefined, `got ${c.mode}`);
+});
+
+test('Config with invalid mode defaults to undefined', () => {
+  writeFileSync('.sidclaw/badmode.yaml', [
+    'rules: []',
+    'default: deny',
+    'mode: banana',
+  ].join('\n'));
+  const c = loadConfig('.sidclaw/badmode.yaml');
+  assert(c.mode === undefined);
+});
+
+console.log('\n=== UI SERVER TESTS ===\n');
+
+import { startUIServer } from './dist/index.js';
+
+asyncTests.push(test('UI serves HTML page', async () => {
+  const { port, close } = await startUIServer({ port: 19091 });
+  try {
+    const res = await fetch(`http://localhost:${port}/`);
+    assert(res.status === 200);
+    const html = await res.text();
+    assert(html.includes('SidClaw Guard'));
+    assert(html.includes('Pending Approvals'));
+    assert(html.includes('Audit Trail'));
+  } finally { close(); }
+}));
+
+asyncTests.push(test('UI returns pending list', async () => {
+  const q = new ApprovalQueue('.sidclaw/ui-test', 5000);
+  q.create('test_tool', { sql: 'DELETE' }, 'test-rule');
+  const { port, close } = await startUIServer({ port: 19092, approvalDir: '.sidclaw/ui-test' });
+  try {
+    const res = await fetch(`http://localhost:${port}/api/pending`);
+    const data = await res.json();
+    assert(data.length === 1, `got ${data.length}`);
+    assert(data[0].tool === 'test_tool');
+  } finally { close(); }
+}));
+
+asyncTests.push(test('UI approve endpoint works', async () => {
+  const q = new ApprovalQueue('.sidclaw/ui-test2', 5000);
+  const p = q.create('tool', {}, 'rule');
+  const { port, close } = await startUIServer({ port: 19093, approvalDir: '.sidclaw/ui-test2' });
+  try {
+    const res = await fetch(`http://localhost:${port}/api/approve/${p.id}`, { method: 'POST' });
+    const data = await res.json();
+    assert(data.ok === true);
+    assert(data.decision === 'approved');
+    // Verify removed from pending
+    const listRes = await fetch(`http://localhost:${port}/api/pending`);
+    const list = await listRes.json();
+    assert(list.length === 0);
+  } finally { close(); }
+}));
+
+asyncTests.push(test('UI deny endpoint works', async () => {
+  const q = new ApprovalQueue('.sidclaw/ui-test3', 5000);
+  const p = q.create('tool', {}, 'rule');
+  const { port, close } = await startUIServer({ port: 19094, approvalDir: '.sidclaw/ui-test3' });
+  try {
+    const res = await fetch(`http://localhost:${port}/api/deny/${p.id}`, { method: 'POST' });
+    const data = await res.json();
+    assert(data.ok === true);
+    assert(data.decision === 'denied');
+  } finally { close(); }
+}));
+
+asyncTests.push(test('UI 404 for unknown routes', async () => {
+  const { port, close } = await startUIServer({ port: 19095 });
+  try {
+    const res = await fetch(`http://localhost:${port}/nope`);
+    assert(res.status === 404);
+  } finally { close(); }
+}));
+
+asyncTests.push(test('UI returns audit entries', async () => {
+  const { port, close } = await startUIServer({ port: 19096, auditPath: '.sidclaw/audit.jsonl' });
+  try {
+    const res = await fetch(`http://localhost:${port}/api/audit`);
+    const data = await res.json();
+    assert(Array.isArray(data));
+  } finally { close(); }
+}));
+
 // Wait for async tests
 await Promise.all(asyncTests.filter(Boolean));
 

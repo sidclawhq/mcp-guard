@@ -64,7 +64,7 @@ The `default` action applies. We recommend `default: deny` (block everything not
 
 1. Guard creates a pending approval file
 2. Guard blocks the tool call and logs instructions to stderr
-3. You run `npx sidclaw-mcp-guard approve <id>` in another terminal
+3. You approve via the local dashboard (`npx sidclaw-mcp-guard ui`) or CLI (`npx sidclaw-mcp-guard approve <id>`)
 4. Guard picks up the decision and forwards (or blocks) the call
 
 ### What's the timeout?
@@ -78,7 +78,17 @@ approval:
 
 ### Can I approve from a phone or web UI?
 
-Not in this version. SidClaw Guard uses file-based approvals. For web-based approval queues, team workflows, and chat integrations (Slack, Teams, Telegram), see the [full SidClaw platform](https://sidclaw.com).
+Yes! Run `npx sidclaw-mcp-guard ui` to open a local approval dashboard at `http://localhost:9091`. Or add `--ui` when starting the proxy to run both together. For team workflows and chat integrations (Slack, Teams, Telegram), see the [full SidClaw platform](https://sidclaw.com).
+
+### Can I test policies without blocking calls?
+
+Yes — use **observe mode**:
+
+```bash
+sidclaw-mcp-guard --observe --upstream ...
+```
+
+The guard evaluates every call and logs the decision, but forwards all calls regardless. Useful for testing your rules before enforcing them.
 
 ## Audit
 

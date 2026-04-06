@@ -70,13 +70,15 @@ export class MCPGuard {
       const toolName = request.params.name;
       const args = (request.params.arguments ?? {}) as Record<string, unknown>;
       const startTime = Date.now();
+      const observing = this.config.mode === 'observe';
+      const modeTag = observing ? ' \x1b[2m[observe]\x1b[0m' : '';
 
       const result = evaluate(toolName, args, this.config.rules, this.config.default);
 
       // ---- DENY ----
       if (result.action === 'deny') {
         const reason = result.reason ?? `Denied by policy${result.rule ? `: ${result.rule.name}` : ''}`;
-        this.log(`\x1b[31m✘ DENIED\x1b[0m  ${toolName}  ${this.summarize(args)}`);
+        this.log(`\x1b[31m✘ DENIED\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
         this.log(`  Rule: ${result.rule?.name ?? 'default'}  Reason: ${reason}`);
 
         this.audit.write({
@@ -87,7 +89,13 @@ export class MCPGuard {
           rule: result.rule?.name,
           reason,
           duration_ms: Date.now() - startTime,
+          ...(observing ? { observe: true } : {}),
         });
+
+        if (observing) {
+          // Observe mode: log but forward anyway
+          return await this.upstream.callTool({ name: toolName, arguments: args });
+        }
 
         return {
           content: [
@@ -102,6 +110,26 @@ export class MCPGuard {
 
       // ---- APPROVE ----
       if (result.action === 'approve') {
+        if (observing) {
+          // Observe mode: log but forward without waiting
+          this.log(`\x1b[33m⏳ WOULD REQUIRE APPROVAL\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
+          this.log(`  Rule: ${result.rule?.name ?? 'default'}`);
+
+          this.audit.write({
+            timestamp: new Date().toISOString(),
+            tool: toolName,
+            args,
+            decision: 'approve',
+            rule: result.rule?.name,
+            status: 'approved',
+            duration_ms: Date.now() - startTime,
+            observe: true,
+          });
+
+          return await this.upstream.callTool({ name: toolName, arguments: args });
+        }
+
+        // Enforce mode: create pending approval and block
         const pending = this.approvals.create(
           toolName,
           args,
@@ -140,11 +168,7 @@ export class MCPGuard {
             duration_ms: Date.now() - startTime,
           });
 
-          // Forward to upstream
-          return await this.upstream.callTool({
-            name: toolName,
-            arguments: args,
-          });
+          return await this.upstream.callTool({ name: toolName, arguments: args });
         }
 
         // Denied or expired
@@ -178,7 +202,7 @@ export class MCPGuard {
       }
 
       // ---- ALLOW ----
-      this.log(`\x1b[32m✔ ALLOWED\x1b[0m  ${toolName}  ${this.summarize(args)}`);
+      this.log(`\x1b[32m✔ ALLOWED\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
       if (result.rule) {
         this.log(`  Rule: ${result.rule.name}`);
       }
@@ -190,12 +214,10 @@ export class MCPGuard {
         decision: 'allow',
         rule: result.rule?.name,
         duration_ms: Date.now() - startTime,
+        ...(observing ? { observe: true } : {}),
       });
 
-      return await this.upstream.callTool({
-        name: toolName,
-        arguments: args,
-      });
+      return await this.upstream.callTool({ name: toolName, arguments: args });
     });
 
     // --- Resources: pass-through ---
@@ -254,8 +276,10 @@ export class MCPGuard {
     const serverTransport = new StdioServerTransport();
     await this.server.connect(serverTransport);
 
+    const mode = this.config.mode ?? 'enforce';
     this.log('');
     this.log('\x1b[1m🛡️  SidClaw Guard active\x1b[0m');
+    this.log(`   Mode:     ${mode}${mode === 'observe' ? ' (log only, all calls forwarded)' : ''}`);
     this.log(`   Rules:    ${this.config.rules.length} loaded`);
     this.log(`   Default:  ${this.config.default}`);
     this.log(`   Upstream: ${upstream.command} ${(upstream.args ?? []).join(' ')}`);

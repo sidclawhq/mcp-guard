@@ -4,7 +4,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { load } from 'js-yaml';
-import type { GuardConfig, PolicyRule, Action } from './types.js';
+import type { GuardConfig, PolicyRule, Action, GuardMode } from './types.js';
 
 const VALID_ACTIONS: Action[] = ['allow', 'deny', 'approve'];
 
@@ -26,9 +26,12 @@ export function loadConfig(path: string): GuardConfig {
   const rules = parseRules(parsed['rules']);
   const defaultAction = parseAction(parsed['default'], 'deny');
 
+  const mode = parseMode(parsed['mode']);
+
   return {
     rules,
     default: defaultAction,
+    mode,
     upstream: parseUpstream(parsed['upstream']),
     audit: parseAudit(parsed['audit']),
     approval: parseApproval(parsed['approval']),
@@ -101,6 +104,12 @@ function parseAudit(raw: unknown): GuardConfig['audit'] {
     path: obj['path'] as string | undefined,
     disabled: obj['disabled'] === true,
   };
+}
+
+function parseMode(raw: unknown): GuardMode | undefined {
+  if (raw === 'observe') return 'observe';
+  if (raw === 'enforce') return 'enforce';
+  return undefined;
 }
 
 function parseApproval(raw: unknown): GuardConfig['approval'] {
