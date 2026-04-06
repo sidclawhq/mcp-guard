@@ -1,8 +1,8 @@
 /**
- * Self-contained SQL demo.
+ * SQL demo — showcases allow / approve / deny decisions.
  *
- * Demonstrates allow / approve / deny on SQL tool calls
- * without needing a real MCP server or database.
+ * The policy engine and audit log are real. The upstream database
+ * is simplified for speed — no real database needed.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -13,221 +13,157 @@ import type { PolicyRule } from './types.js';
 const DEMO_RULES: PolicyRule[] = [
   {
     name: 'allow-reads',
-    description: 'Allow SELECT queries',
-    match: { tool: 'query', args: { sql: '^\\s*SELECT' } },
+    description: 'Read-only queries are safe',
+    match: { tool: 'query', pattern: 'sql-read' },
     action: 'allow',
   },
   {
-    name: 'approve-mutations',
-    description: 'Require approval for data changes',
-    match: { tool: 'query', args: { sql: '^\\s*(DELETE|UPDATE|INSERT)' } },
+    name: 'approve-writes',
+    description: 'Data changes need approval',
+    match: { tool: 'query', pattern: 'sql-write' },
     action: 'approve',
   },
   {
     name: 'deny-destructive',
-    description: 'Block destructive schema operations',
-    match: { tool: 'query', args: { sql: '^\\s*(DROP|TRUNCATE|ALTER)' } },
+    description: 'Schema changes are never allowed',
+    match: { tool: 'query', pattern: 'sql-destructive' },
     action: 'deny',
     reason: 'Destructive schema operations are blocked by policy',
   },
 ];
 
-interface DemoTestCase {
-  label: string;
+interface DemoCase {
   sql: string;
-  expected: 'allow' | 'approve' | 'deny';
   mockResult?: string;
 }
 
-const TEST_CASES: DemoTestCase[] = [
-  {
-    label: 'Read user data',
-    sql: 'SELECT * FROM users',
-    expected: 'allow',
-    mockResult: '[\n  { "id": 1, "name": "Alice", "email": "alice@acme.com" },\n  { "id": 2, "name": "Bob", "email": "bob@acme.com" }\n]',
-  },
-  {
-    label: 'Delete a user',
-    sql: 'DELETE FROM users WHERE id = 42',
-    expected: 'approve',
-    mockResult: '1 row affected',
-  },
-  {
-    label: 'Drop the users table',
-    sql: 'DROP TABLE users',
-    expected: 'deny',
-  },
+const SHOWCASE: DemoCase[] = [
+  { sql: 'SELECT * FROM users', mockResult: '3 rows returned' },
+  { sql: 'DELETE FROM users WHERE id = 42', mockResult: '1 row deleted' },
+  { sql: 'DROP TABLE users' },
 ];
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 export async function runDemo(interactive: boolean = false): Promise<void> {
   const w = process.stderr.write.bind(process.stderr);
 
-  w('\n');
-  w('\x1b[1m🛡️  SidClaw Guard — SQL Demo\x1b[0m\n');
-  w('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  w('\n');
-  w('  Scenario: An AI agent has MCP access to a PostgreSQL database.\n');
-  w('  SidClaw Guard sits in front and enforces these rules:\n');
-  w('\n');
-  w('  \x1b[2m1.\x1b[0m allow-reads       → SELECT queries \x1b[32mpass through\x1b[0m\n');
-  w('  \x1b[2m2.\x1b[0m approve-mutations → DELETE/UPDATE  \x1b[33mheld for approval\x1b[0m\n');
-  w('  \x1b[2m3.\x1b[0m deny-destructive  → DROP/TRUNCATE  \x1b[31mblocked\x1b[0m\n');
-  w('  \x1b[2m   default: deny\x1b[0m\n');
-  w('\n');
-
-  // Clean audit log for a fresh demo run
+  // Clean audit log
   try { writeFileSync('.sidclaw/audit.jsonl', ''); } catch { /* ignore */ }
   const audit = new AuditLog('.sidclaw/audit.jsonl');
 
-  for (let i = 0; i < TEST_CASES.length; i++) {
-    const test = TEST_CASES[i]!;
-    const num = i + 1;
+  w('\n');
+  w('\x1b[1m🛡️  SidClaw Guard — Live Policy Demo\x1b[0m\n');
+  w('\n');
+  w('  The policy engine and audit trail below are real.\n');
+  w('  The database is simulated so you don\'t need one.\n');
+  w('\n');
+  w('  \x1b[2mRules loaded:\x1b[0m\n');
+  w('    allow-reads       \x1b[32m→ allow\x1b[0m   (SELECT, EXPLAIN)\n');
+  w('    approve-writes    \x1b[33m→ hold\x1b[0m    (DELETE, UPDATE, INSERT)\n');
+  w('    deny-destructive  \x1b[31m→ block\x1b[0m   (DROP, TRUNCATE, ALTER)\n');
+  w('    default: deny\n');
+  w('\n');
 
-    w(`━━━ Test ${num}/${TEST_CASES.length}: ${test.label} ${'━'.repeat(Math.max(0, 40 - test.label.length))}\n`);
-    w('\n');
-    w(`  \x1b[2mAgent calls:\x1b[0m  query("${test.sql}")\n`);
-    w('\n');
-
-    await sleep(500); // Dramatic pause for demo
-
-    const result = evaluate('query', { sql: test.sql }, DEMO_RULES, 'deny');
-
-    const startTime = Date.now();
-
-    if (result.action === 'allow') {
-      w(`  \x1b[32m✔ ALLOWED\x1b[0m  Rule: ${result.rule?.name}\n`);
-      w(`  → Forwarded to upstream PostgreSQL\n`);
-      if (test.mockResult) {
-        w(`  → Result: ${test.mockResult}\n`);
-      }
-      audit.write({
-        timestamp: new Date().toISOString(),
-        tool: 'query',
-        args: { sql: test.sql },
-        decision: 'allow',
-        rule: result.rule?.name,
-        duration_ms: Date.now() - startTime,
-      });
-    } else if (result.action === 'approve') {
-      w(`  \x1b[33m⏳ APPROVAL REQUIRED\x1b[0m  Rule: ${result.rule?.name}\n`);
-      w('\n');
-
-      if (interactive) {
-        w('  The agent is paused. In a real setup, you would run:\n');
-        w('  \x1b[1m  npx sidclaw-mcp-guard approve <id>\x1b[0m\n');
-        w('\n');
-
-        const approved = await askApproval();
-        if (approved) {
-          w(`\n  \x1b[32m✔ APPROVED\x1b[0m → Forwarded to upstream\n`);
-          if (test.mockResult) {
-            w(`  → Result: ${test.mockResult}\n`);
-          }
-          audit.write({
-            timestamp: new Date().toISOString(),
-            tool: 'query',
-            args: { sql: test.sql },
-            decision: 'approve',
-            rule: result.rule?.name,
-            approval_id: 'demo',
-            status: 'approved',
-            duration_ms: Date.now() - startTime,
-          });
-        } else {
-          w(`\n  \x1b[31m✘ DENIED BY REVIEWER\x1b[0m\n`);
-          audit.write({
-            timestamp: new Date().toISOString(),
-            tool: 'query',
-            args: { sql: test.sql },
-            decision: 'approve',
-            rule: result.rule?.name,
-            approval_id: 'demo',
-            status: 'denied',
-            duration_ms: Date.now() - startTime,
-          });
-        }
-      } else {
-        w('  The agent is paused, waiting for a human decision.\n');
-        w('  \x1b[2m[Auto-approving in 3s for demo...]\x1b[0m\n');
-
-        await sleep(3000);
-
-        w(`  \x1b[32m✔ APPROVED\x1b[0m → Forwarded to upstream\n`);
-        if (test.mockResult) {
-          w(`  → Result: ${test.mockResult}\n`);
-        }
-        audit.write({
-          timestamp: new Date().toISOString(),
-          tool: 'query',
-          args: { sql: test.sql },
-          decision: 'approve',
-          rule: result.rule?.name,
-          approval_id: 'demo',
-          status: 'approved',
-          duration_ms: Date.now() - startTime,
-        });
-      }
-    } else {
-      w(`  \x1b[31m✘ DENIED\x1b[0m  Rule: ${result.rule?.name}\n`);
-      w(`  Reason: ${result.reason}\n`);
-      w(`  → The agent receives an error. The query never reaches the database.\n`);
-      audit.write({
-        timestamp: new Date().toISOString(),
-        tool: 'query',
-        args: { sql: test.sql },
-        decision: 'deny',
-        rule: result.rule?.name,
-        reason: result.reason,
-        duration_ms: Date.now() - startTime,
-      });
-    }
-
-    w('\n');
+  if (interactive) {
+    await interactiveMode(w, audit);
+  } else {
+    await showcaseMode(w, audit);
   }
 
-  // Show audit log
-  w('━━━ Audit Trail ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  w('\n');
-  w(`  \x1b[2mFile: ${audit.getPath()}\x1b[0m\n\n`);
-
-  const entries = audit.read();
-  for (const entry of entries) {
-    const icon =
-      entry.decision === 'allow'
-        ? '\x1b[32m✔\x1b[0m'
-        : entry.decision === 'deny'
-          ? '\x1b[31m✘\x1b[0m'
-          : '\x1b[33m⏳\x1b[0m';
+  // Show audit trail
+  w('  \x1b[2m─── Audit (.sidclaw/audit.jsonl) ───\x1b[0m\n\n');
+  for (const entry of audit.read()) {
+    const icon = entry.decision === 'allow' ? '\x1b[32m✔\x1b[0m'
+      : entry.decision === 'deny' ? '\x1b[31m✘\x1b[0m' : '\x1b[33m⏳\x1b[0m';
     const sql = (entry.args['sql'] as string) ?? '';
-    const short = sql.length > 40 ? sql.substring(0, 37) + '...' : sql;
-    w(`  ${icon} ${entry.decision.padEnd(7)} ${short}\n`);
+    const short = sql.length > 45 ? sql.substring(0, 42) + '...' : sql;
+    w(`    ${icon} ${entry.decision.padEnd(7)} ${short}\n`);
+    if (entry.explanation) {
+      w(`      \x1b[2m${entry.explanation}\x1b[0m\n`);
+    }
   }
 
   w('\n');
-  w('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  w('\n');
-  w('  \x1b[1mNext steps:\x1b[0m\n');
-  w('  1. Guard your own MCP server → docs/quickstart.md\n');
-  w('  2. Customize policies        → docs/config.md\n');
-  w('  3. Full platform features    → https://sidclaw.com\n');
+  w('  \x1b[1mNext:\x1b[0m\n');
+  w('    npx sidclaw-mcp-guard quickstart   Set up a real guarded MCP server\n');
+  w('    npx sidclaw-mcp-guard demo -i      Try your own SQL queries\n');
   w('\n');
 }
 
-async function askApproval(): Promise<boolean> {
+async function showcaseMode(
+  w: (s: string) => boolean,
+  audit: AuditLog,
+): Promise<void> {
+  for (const test of SHOWCASE) {
+    evaluateAndPrint(w, audit, test.sql, test.mockResult);
+    w('\n');
+  }
+}
+
+async function interactiveMode(
+  w: (s: string) => boolean,
+  audit: AuditLog,
+): Promise<void> {
   const readline = await import('node:readline');
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stderr,
-  });
-  return new Promise((resolve) => {
-    rl.question('  Approve this action? [Y/n] ', (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      resolve(a === '' || a === 'y' || a === 'yes');
+
+  // First show the three showcase queries
+  w('  \x1b[2m─── Showcase ───\x1b[0m\n\n');
+  for (const test of SHOWCASE) {
+    evaluateAndPrint(w, audit, test.sql, test.mockResult);
+    w('\n');
+  }
+
+  // Then let the user try their own
+  w('  \x1b[2m─── Try your own ───\x1b[0m\n\n');
+  w('  Type a SQL query to see how the guard evaluates it.\n');
+  w('  Press Ctrl+C or type "exit" to quit.\n\n');
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr, prompt: '  \x1b[1msql>\x1b[0m ' });
+  rl.prompt();
+
+  await new Promise<void>((resolve) => {
+    rl.on('line', (line: string) => {
+      const sql = line.trim();
+      if (!sql || sql === 'exit' || sql === 'quit') { rl.close(); resolve(); return; }
+      w('\n');
+      evaluateAndPrint(w, audit, sql);
+      w('\n');
+      rl.prompt();
     });
+    rl.on('close', resolve);
+  });
+
+  w('\n');
+}
+
+function evaluateAndPrint(
+  w: (s: string) => boolean,
+  audit: AuditLog,
+  sql: string,
+  mockResult?: string,
+): void {
+  const result = evaluate('query', { sql }, DEMO_RULES, 'deny');
+
+  if (result.action === 'allow') {
+    w(`  \x1b[32m✔ ALLOW\x1b[0m  ${sql}\n`);
+    w(`    ${result.explanation}\n`);
+    if (mockResult) w(`    \x1b[2m→ ${mockResult}\x1b[0m\n`);
+  } else if (result.action === 'approve') {
+    w(`  \x1b[33m⏳ HOLD\x1b[0m   ${sql}\n`);
+    w(`    ${result.explanation}\n`);
+    if (mockResult) w(`    \x1b[2m→ Would forward after approval: ${mockResult}\x1b[0m\n`);
+  } else {
+    w(`  \x1b[31m✘ BLOCK\x1b[0m  ${sql}\n`);
+    w(`    ${result.explanation}\n`);
+  }
+
+  audit.write({
+    timestamp: new Date().toISOString(),
+    tool: 'query',
+    args: { sql },
+    decision: result.action,
+    rule: result.rule?.name,
+    reason: result.reason,
+    explanation: result.explanation,
+    duration_ms: 0,
   });
 }

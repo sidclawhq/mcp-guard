@@ -7,33 +7,35 @@
 #   allow   — tool call passes through to upstream
 #   deny    — tool call is blocked, agent receives error
 #   approve — tool call is held for human approval
+#
+# Patterns (built-in):
+#   sql-read         SELECT, EXPLAIN, SHOW
+#   sql-write        INSERT, UPDATE, DELETE
+#   sql-destructive  DROP, TRUNCATE, ALTER, CREATE
+#   file-read        read_file, list_directory, search_files
+#   file-write       write_file, edit_file, move_file
+#   file-delete      delete_file, remove_directory
 
 rules:
-  # Safe: read-only queries pass through
+  # Safe: read queries pass through
   - name: allow-reads
-    description: Allow SELECT queries
+    description: Read-only queries are safe
     match:
-      tool: query
-      args:
-        sql: "^\\s*SELECT"
+      pattern: sql-read
     action: allow
 
-  # Risky: data mutations need human approval
-  - name: approve-mutations
-    description: Require approval for data changes
+  # Risky: data mutations need a human check
+  - name: approve-writes
+    description: Data changes need approval
     match:
-      tool: query
-      args:
-        sql: "^\\s*(DELETE|UPDATE|INSERT)"
+      pattern: sql-write
     action: approve
 
-  # Dangerous: schema operations are blocked
+  # Dangerous: schema changes are blocked
   - name: deny-destructive
-    description: Block destructive schema operations
+    description: Schema changes are never allowed
     match:
-      tool: query
-      args:
-        sql: "^\\s*(DROP|TRUNCATE|ALTER)"
+      pattern: sql-destructive
     action: deny
     reason: "Destructive schema operations are blocked by policy"
 

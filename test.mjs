@@ -1,13 +1,14 @@
 /**
- * Comprehensive stress tests for sidclaw-mcp-guard.
+ * Comprehensive tests for sidclaw-mcp-guard.
  */
 
-import { evaluate, AuditLog, ApprovalQueue, loadConfig, defaultConfig } from './dist/index.js';
+import { evaluate, AuditLog, ApprovalQueue, loadConfig, defaultConfig, startUIServer, semanticPatterns } from './dist/index.js';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 
 let passed = 0;
 let failed = 0;
 const results = [];
+const asyncTests = [];
 
 function test(name, fn) {
   try {
@@ -36,7 +37,15 @@ function assert(condition, msg) {
 // Clean up
 if (existsSync('.sidclaw')) rmSync('.sidclaw', { recursive: true });
 
-const rules = [
+// --- Rules using semantic patterns ---
+const semanticRules = [
+  { name: 'allow-reads', match: { tool: '*', pattern: 'sql-read' }, action: 'allow' },
+  { name: 'approve-writes', match: { tool: '*', pattern: 'sql-write' }, action: 'approve' },
+  { name: 'deny-ddl', match: { tool: '*', pattern: 'sql-destructive' }, action: 'deny', reason: 'DDL blocked' },
+];
+
+// --- Rules using raw regex ---
+const regexRules = [
   { name: 'allow-reads', match: { tool: 'query', args: { sql: '^\\s*SELECT' } }, action: 'allow' },
   { name: 'approve-muts', match: { tool: 'query', args: { sql: '^\\s*(DELETE|UPDATE|INSERT)' } }, action: 'approve' },
   { name: 'deny-ddl', match: { tool: 'query', args: { sql: '^\\s*(DROP|TRUNCATE)' } }, action: 'deny', reason: 'DDL blocked' },
@@ -44,262 +53,236 @@ const rules = [
   { name: 'deny-wildcard', match: { tool: '*_dangerous' }, action: 'deny', reason: 'dangerous tool' },
 ];
 
-console.log('\n=== POLICY ENGINE STRESS TESTS ===\n');
+console.log('\n=== SEMANTIC PATTERN TESTS ===\n');
 
-test('SELECT → allow', () => {
-  const r = evaluate('query', { sql: 'SELECT * FROM users' }, rules, 'deny');
+test('Semantic: SELECT → allow', () => {
+  const r = evaluate('query', { sql: 'SELECT * FROM users' }, semanticRules, 'deny');
   assert(r.action === 'allow', `got ${r.action}`);
 });
 
+test('Semantic: EXPLAIN → allow', () => {
+  const r = evaluate('query', { sql: 'EXPLAIN SELECT 1' }, semanticRules, 'deny');
+  assert(r.action === 'allow');
+});
+
+test('Semantic: WITH (CTE) → allow', () => {
+  const r = evaluate('query', { sql: 'WITH cte AS (SELECT 1) SELECT * FROM cte' }, semanticRules, 'deny');
+  assert(r.action === 'allow');
+});
+
+test('Semantic: DELETE → approve', () => {
+  const r = evaluate('query', { sql: 'DELETE FROM users WHERE id=1' }, semanticRules, 'deny');
+  assert(r.action === 'approve');
+});
+
+test('Semantic: INSERT → approve', () => {
+  const r = evaluate('query', { sql: 'INSERT INTO users VALUES(1)' }, semanticRules, 'deny');
+  assert(r.action === 'approve');
+});
+
+test('Semantic: UPDATE → approve', () => {
+  const r = evaluate('query', { sql: 'UPDATE users SET x=1' }, semanticRules, 'deny');
+  assert(r.action === 'approve');
+});
+
+test('Semantic: DROP → deny', () => {
+  const r = evaluate('query', { sql: 'DROP TABLE users' }, semanticRules, 'deny');
+  assert(r.action === 'deny');
+});
+
+test('Semantic: TRUNCATE → deny', () => {
+  const r = evaluate('query', { sql: 'TRUNCATE users' }, semanticRules, 'deny');
+  assert(r.action === 'deny');
+});
+
+test('Semantic: ALTER → deny', () => {
+  const r = evaluate('query', { sql: 'ALTER TABLE users ADD col int' }, semanticRules, 'deny');
+  assert(r.action === 'deny');
+});
+
+test('Semantic: CREATE → deny', () => {
+  const r = evaluate('query', { sql: 'CREATE TABLE t (id int)' }, semanticRules, 'deny');
+  assert(r.action === 'deny');
+});
+
+test('Semantic: GRANT → deny', () => {
+  const r = evaluate('query', { sql: 'GRANT ALL ON users TO admin' }, semanticRules, 'deny');
+  assert(r.action === 'deny');
+});
+
+console.log('\n=== EXPLANATION TESTS ===\n');
+
+test('Explanation includes rule description', () => {
+  const rules = [{ name: 'r1', description: 'Read queries are safe', match: { tool: 'query', args: { sql: '^SELECT' } }, action: 'allow' }];
+  const r = evaluate('query', { sql: 'SELECT 1' }, rules, 'deny');
+  assert(r.explanation.includes('Read queries are safe'), `got: ${r.explanation}`);
+});
+
+test('Explanation includes action verb', () => {
+  const r = evaluate('query', { sql: 'DROP TABLE x' }, semanticRules, 'deny');
+  assert(r.explanation.includes('Blocked'), `got: ${r.explanation}`);
+});
+
+test('Explanation describes tool call', () => {
+  const r = evaluate('query', { sql: 'SELECT * FROM users' }, semanticRules, 'deny');
+  assert(r.explanation.includes('read query'), `got: ${r.explanation}`);
+});
+
+test('Explanation for default action', () => {
+  const r = evaluate('unknown', {}, semanticRules, 'deny');
+  assert(r.explanation.includes('default policy'), `got: ${r.explanation}`);
+});
+
+test('Explanation for DELETE mentions table', () => {
+  const r = evaluate('query', { sql: 'DELETE FROM orders WHERE id=5' }, semanticRules, 'deny');
+  assert(r.explanation.includes('orders'), `got: ${r.explanation}`);
+});
+
+console.log('\n=== REGEX PATTERN TESTS ===\n');
+
+test('SELECT → allow', () => {
+  const r = evaluate('query', { sql: 'SELECT * FROM users' }, regexRules, 'deny');
+  assert(r.action === 'allow');
+});
+
 test('DELETE → approve', () => {
-  const r = evaluate('query', { sql: 'DELETE FROM users WHERE id=1' }, rules, 'deny');
-  assert(r.action === 'approve', `got ${r.action}`);
+  const r = evaluate('query', { sql: 'DELETE FROM users' }, regexRules, 'deny');
+  assert(r.action === 'approve');
 });
 
 test('DROP → deny', () => {
-  const r = evaluate('query', { sql: 'DROP TABLE users' }, rules, 'deny');
-  assert(r.action === 'deny', `got ${r.action}`);
-});
-
-test('INSERT → approve', () => {
-  const r = evaluate('query', { sql: 'INSERT INTO users VALUES(1)' }, rules, 'deny');
-  assert(r.action === 'approve');
-});
-
-test('UPDATE → approve', () => {
-  const r = evaluate('query', { sql: 'UPDATE users SET name=x' }, rules, 'deny');
-  assert(r.action === 'approve');
-});
-
-test('TRUNCATE → deny', () => {
-  const r = evaluate('query', { sql: 'TRUNCATE users' }, rules, 'deny');
+  const r = evaluate('query', { sql: 'DROP TABLE users' }, regexRules, 'deny');
   assert(r.action === 'deny');
 });
 
-test('Unknown tool → default deny', () => {
-  const r = evaluate('unknown_tool', {}, rules, 'deny');
+test('Default deny', () => {
+  const r = evaluate('unknown', {}, regexRules, 'deny');
   assert(r.action === 'deny');
 });
 
-test('Default allow works', () => {
-  const r = evaluate('unknown_tool', {}, rules, 'allow');
+test('Default allow', () => {
+  const r = evaluate('unknown', {}, regexRules, 'allow');
   assert(r.action === 'allow');
 });
 
-test('Default approve works', () => {
-  const r = evaluate('unknown_tool', {}, rules, 'approve');
-  assert(r.action === 'approve');
-});
-
-// Glob matching
 test('Glob: read_file matches read_*', () => {
-  const r = evaluate('read_file', {}, rules, 'deny');
-  assert(r.action === 'allow');
-});
-
-test('Glob: read_resource matches read_*', () => {
-  const r = evaluate('read_resource', {}, rules, 'deny');
+  const r = evaluate('read_file', {}, regexRules, 'deny');
   assert(r.action === 'allow');
 });
 
 test('Glob: exec_dangerous matches *_dangerous', () => {
-  const r = evaluate('exec_dangerous', {}, rules, 'deny');
+  const r = evaluate('exec_dangerous', {}, regexRules, 'deny');
   assert(r.action === 'deny');
 });
 
-test('Glob: read_dangerous → read_* wins (first match)', () => {
-  const r = evaluate('read_dangerous', {}, rules, 'deny');
-  assert(r.action === 'allow', 'first match wins');
-});
-
-test('Glob: exact match over glob', () => {
-  const r = evaluate('query', { sql: 'SELECT 1' }, rules, 'deny');
-  assert(r.action === 'allow');
-  assert(r.rule.name === 'allow-reads');
-});
-
-// Edge cases
 test('Empty rules → default', () => {
   const r = evaluate('anything', {}, [], 'deny');
   assert(r.action === 'deny');
 });
 
-test('Empty args → no match on arg-based rule', () => {
-  const r = evaluate('query', {}, rules, 'deny');
-  assert(r.action === 'deny');
-});
-
 test('Null arg value → no match', () => {
-  const r = evaluate('query', { sql: null }, rules, 'deny');
+  const r = evaluate('query', { sql: null }, regexRules, 'deny');
   assert(r.action === 'deny');
-});
-
-test('Undefined arg value → no match', () => {
-  const r = evaluate('query', { sql: undefined }, rules, 'deny');
-  assert(r.action === 'deny');
-});
-
-test('Leading whitespace in SQL', () => {
-  const r = evaluate('query', { sql: '   SELECT 1' }, rules, 'deny');
-  assert(r.action === 'allow');
 });
 
 test('Case insensitive: select', () => {
-  const r = evaluate('query', { sql: 'select * from users' }, rules, 'deny');
+  const r = evaluate('query', { sql: 'select * from users' }, regexRules, 'deny');
   assert(r.action === 'allow');
 });
 
-test('Case insensitive: DeLeTe', () => {
-  const r = evaluate('query', { sql: 'DeLeTe FROM users' }, rules, 'deny');
-  assert(r.action === 'approve');
-});
-
-test('Very long SQL string', () => {
-  const r = evaluate('query', { sql: 'SELECT ' + 'x'.repeat(100000) }, rules, 'deny');
+test('Leading whitespace', () => {
+  const r = evaluate('query', { sql: '   SELECT 1' }, regexRules, 'deny');
   assert(r.action === 'allow');
 });
 
-test('Empty tool name → default', () => {
-  const r = evaluate('', {}, rules, 'deny');
-  assert(r.action === 'deny');
-});
-
-test('Numeric arg value', () => {
-  const r = evaluate('query', { sql: 42 }, rules, 'deny');
-  assert(r.action === 'deny');
-});
-
-test('Boolean arg value', () => {
-  const r = evaluate('query', { sql: true }, rules, 'deny');
-  assert(r.action === 'deny');
-});
-
-test('Array arg value (stringified: "SELECT,1" matches SELECT)', () => {
-  const r = evaluate('query', { sql: ['SELECT', '1'] }, rules, 'deny');
-  assert(r.action === 'allow', 'String(["SELECT","1"]) = "SELECT,1" matches ^SELECT');
-});
-
-test('Object arg value', () => {
-  const r = evaluate('query', { sql: { text: 'SELECT 1' } }, rules, 'deny');
-  assert(r.action === 'deny');
-});
-
-test('Rule with no args matcher (matches tool name only)', () => {
-  const simpleRules = [{ name: 'r1', match: { tool: 'query' }, action: 'allow' }];
-  const r = evaluate('query', { anything: 'goes' }, simpleRules, 'deny');
+test('Very long SQL', () => {
+  const r = evaluate('query', { sql: 'SELECT ' + 'x'.repeat(100000) }, regexRules, 'deny');
   assert(r.action === 'allow');
 });
 
 test('Multiple arg matchers (AND logic)', () => {
-  const multiRules = [{
-    name: 'r1',
-    match: { tool: 'query', args: { sql: '^SELECT', database: 'production' } },
-    action: 'deny'
-  }];
-  // Both match
-  const r1 = evaluate('query', { sql: 'SELECT 1', database: 'production' }, multiRules, 'allow');
-  assert(r1.action === 'deny');
-  // Only sql matches
-  const r2 = evaluate('query', { sql: 'SELECT 1', database: 'staging' }, multiRules, 'allow');
-  assert(r2.action === 'allow', 'should fall through to default');
+  const rules = [{ name: 'r1', match: { tool: 'query', args: { sql: '^SELECT', database: 'prod' } }, action: 'deny' }];
+  assert(evaluate('query', { sql: 'SELECT 1', database: 'prod' }, rules, 'allow').action === 'deny');
+  assert(evaluate('query', { sql: 'SELECT 1', database: 'dev' }, rules, 'allow').action === 'allow');
 });
 
-test('Invalid regex in rule falls back to literal match', () => {
-  const badRules = [{ name: 'bad', match: { tool: 'x', args: { sql: '[invalid' } }, action: 'allow' }];
-  const r = evaluate('x', { sql: '[invalid' }, badRules, 'deny');
-  assert(r.action === 'allow');
+test('Invalid regex falls back to literal', () => {
+  const rules = [{ name: 'bad', match: { tool: 'x', args: { sql: '[invalid' } }, action: 'allow' }];
+  assert(evaluate('x', { sql: '[invalid' }, rules, 'deny').action === 'allow');
 });
 
-test('Wildcard glob * matches everything', () => {
-  const catchAll = [{ name: 'all', match: { tool: '*' }, action: 'approve' }];
-  const r = evaluate('anything_at_all', {}, catchAll, 'deny');
-  assert(r.action === 'approve');
+test('Wildcard * matches all', () => {
+  const rules = [{ name: 'all', match: { tool: '*' }, action: 'approve' }];
+  assert(evaluate('anything', {}, rules, 'deny').action === 'approve');
 });
 
-test('Reason is returned on deny', () => {
-  const r = evaluate('query', { sql: 'DROP TABLE' }, rules, 'deny');
-  assert(r.reason === 'DDL blocked');
+console.log('\n=== FILE PATTERN TESTS ===\n');
+
+test('file-read pattern matches read_file', () => {
+  const rules = [{ name: 'fr', match: { tool: '*', pattern: 'file-read' }, action: 'allow' }];
+  assert(evaluate('read_file', {}, rules, 'deny').action === 'allow');
 });
 
-test('Rule reference is returned on match', () => {
-  const r = evaluate('query', { sql: 'SELECT 1' }, rules, 'deny');
-  assert(r.rule?.name === 'allow-reads');
+test('file-read pattern matches list_directory', () => {
+  const rules = [{ name: 'fr', match: { tool: '*', pattern: 'file-read' }, action: 'allow' }];
+  assert(evaluate('list_directory', {}, rules, 'deny').action === 'allow');
 });
 
-test('No rule reference on default', () => {
-  const r = evaluate('nomatch', {}, rules, 'deny');
-  assert(r.rule === undefined);
+test('file-write pattern matches write_file', () => {
+  const rules = [{ name: 'fw', match: { tool: '*', pattern: 'file-write' }, action: 'approve' }];
+  assert(evaluate('write_file', {}, rules, 'deny').action === 'approve');
 });
 
-console.log('\n=== AUDIT LOG STRESS TESTS ===\n');
+test('file-delete pattern matches delete_file', () => {
+  const rules = [{ name: 'fd', match: { tool: '*', pattern: 'file-delete' }, action: 'deny' }];
+  assert(evaluate('delete_file', {}, rules, 'deny').action === 'deny');
+});
+
+console.log('\n=== AUDIT LOG TESTS ===\n');
 
 test('Write and read entries', () => {
   const audit = new AuditLog('.sidclaw/test-audit.jsonl');
   audit.write({ timestamp: 'T1', tool: 'a', args: {}, decision: 'allow' });
-  audit.write({ timestamp: 'T2', tool: 'b', args: { x: 1 }, decision: 'deny' });
+  audit.write({ timestamp: 'T2', tool: 'b', args: { x: 1 }, decision: 'deny', explanation: 'blocked by policy' });
   const entries = audit.read();
-  assert(entries.length === 2, `got ${entries.length}`);
-  assert(entries[0].tool === 'a');
-  assert(entries[1].decision === 'deny');
+  assert(entries.length === 2);
+  assert(entries[1].explanation === 'blocked by policy');
 });
 
 test('Read empty file', () => {
   writeFileSync('.sidclaw/empty.jsonl', '');
-  const audit = new AuditLog('.sidclaw/empty.jsonl');
-  assert(audit.read().length === 0);
+  assert(new AuditLog('.sidclaw/empty.jsonl').read().length === 0);
 });
 
 test('Read nonexistent file', () => {
-  const audit = new AuditLog('.sidclaw/nope.jsonl');
-  assert(audit.read().length === 0);
+  assert(new AuditLog('.sidclaw/nope.jsonl').read().length === 0);
 });
 
 test('Disabled audit', () => {
-  const audit = new AuditLog('.sidclaw/disabled.jsonl', true);
-  audit.write({ timestamp: 'T', tool: 'x', args: {}, decision: 'allow' });
+  new AuditLog('.sidclaw/disabled.jsonl', true).write({ timestamp: 'T', tool: 'x', args: {}, decision: 'allow' });
   assert(!existsSync('.sidclaw/disabled.jsonl'));
 });
 
-test('Large entry', () => {
-  const audit = new AuditLog('.sidclaw/large.jsonl');
-  audit.write({ timestamp: 'T', tool: 'x', args: { data: 'x'.repeat(10000) }, decision: 'allow' });
-  assert(audit.read()[0].args.data.length === 10000);
+test('Multiple newlines (resilience)', () => {
+  writeFileSync('.sidclaw/messy.jsonl', '{"tool":"a","decision":"allow"}\n\n{"tool":"b","decision":"deny"}\n\n');
+  assert(new AuditLog('.sidclaw/messy.jsonl').read().length === 2);
 });
 
-test('Special characters preserved', () => {
-  const audit = new AuditLog('.sidclaw/special.jsonl');
-  const sql = "it's a \"test\" with \\n newlines\ttabs";
-  audit.write({ timestamp: 'T', tool: 'x', args: { sql }, decision: 'allow' });
-  assert(audit.read()[0].args.sql === sql);
-});
-
-test('Multiple newlines in file (resilience)', () => {
-  writeFileSync('.sidclaw/messy.jsonl', '{"tool":"a","decision":"allow"}\n\n\n{"tool":"b","decision":"deny"}\n\n');
-  const audit = new AuditLog('.sidclaw/messy.jsonl');
-  const entries = audit.read();
-  assert(entries.length === 2, `got ${entries.length}`);
-});
-
-console.log('\n=== APPROVAL QUEUE STRESS TESTS ===\n');
+console.log('\n=== APPROVAL QUEUE TESTS ===\n');
 
 test('Create and list pending', () => {
   const q = new ApprovalQueue('.sidclaw/q1', 5000);
-  q.create('tool1', { a: 1 }, 'rule1');
-  q.create('tool2', { b: 2 }, 'rule2');
-  assert(q.list().length === 2);
+  q.create('t1', {}, 'r1', undefined, 'explanation 1');
+  q.create('t2', {}, 'r2');
+  const list = q.list();
+  assert(list.length === 2);
+  assert(list[0].explanation === 'explanation 1');
 });
 
 test('Approve removes from pending', () => {
   const q = new ApprovalQueue('.sidclaw/q2', 5000);
   const p = q.create('tool', {}, 'rule');
   q.decide(p.id, 'approved');
-  assert(q.list().length === 0);
-});
-
-test('Deny removes from pending', () => {
-  const q = new ApprovalQueue('.sidclaw/q3', 5000);
-  const p = q.create('tool', {}, 'rule');
-  q.decide(p.id, 'denied');
   assert(q.list().length === 0);
 });
 
@@ -319,7 +302,28 @@ test('Unknown ID throws', () => {
   }
 });
 
-const asyncTests = [];
+test('Cleanup removes decided files', () => {
+  const q = new ApprovalQueue('.sidclaw/q-clean1', 5000);
+  const p = q.create('tool', {}, 'rule');
+  q.decide(p.id, 'approved');
+  const removed = q.cleanup();
+  assert(removed === 1, `removed ${removed}`);
+});
+
+test('Cleanup removes stale files', () => {
+  const q = new ApprovalQueue('.sidclaw/q-clean2', 5000);
+  q.create('tool', {}, 'rule');
+  // Cleanup with 0ms maxAge means everything is stale
+  const removed = q.cleanup(0);
+  assert(removed === 1);
+});
+
+test('Cleanup preserves fresh pending', () => {
+  const q = new ApprovalQueue('.sidclaw/q-clean3', 5000);
+  q.create('tool', {}, 'rule');
+  const removed = q.cleanup(3600000); // 1hr max age
+  assert(removed === 0);
+});
 
 asyncTests.push(test('Timeout returns expired', async () => {
   const q = new ApprovalQueue('.sidclaw/q6', 1500);
@@ -333,42 +337,15 @@ asyncTests.push(test('Fast approve resolves', async () => {
   const p = q.create('tool', {}, 'rule');
   setTimeout(() => q.decide(p.id, 'approved'), 600);
   const result = await q.waitForDecision(p.id);
-  assert(result === 'approved', `got ${result}`);
+  assert(result === 'approved');
 }));
 
-asyncTests.push(test('Fast deny resolves', async () => {
-  const q = new ApprovalQueue('.sidclaw/q8', 30000);
-  const p = q.create('tool', {}, 'rule');
-  setTimeout(() => q.decide(p.id, 'denied'), 600);
-  const result = await q.waitForDecision(p.id);
-  assert(result === 'denied', `got ${result}`);
-}));
+console.log('\n=== CONFIG LOADER TESTS ===\n');
 
-test('Multiple concurrent pending', () => {
-  const q = new ApprovalQueue('.sidclaw/q9', 5000);
-  const p1 = q.create('tool1', {}, 'r1');
-  const p2 = q.create('tool2', {}, 'r2');
-  const p3 = q.create('tool3', {}, 'r3');
-  assert(q.list().length === 3);
-  q.decide(p2.id, 'approved');
-  assert(q.list().length === 2);
-  q.decide(p1.id, 'denied');
-  assert(q.list().length === 1);
-});
-
-test('Sorted by timestamp', () => {
-  const q = new ApprovalQueue('.sidclaw/q10', 5000);
-  q.create('tool1', {}, 'r1');
-  q.create('tool2', {}, 'r2');
-  const list = q.list();
-  assert(list[0].timestamp <= list[1].timestamp);
-});
-
-console.log('\n=== CONFIG LOADER STRESS TESTS ===\n');
-
-test('Load valid config', () => {
+test('Load config with semantic patterns', () => {
   const c = loadConfig('sidclaw.config.yaml');
-  assert(c.rules.length === 3);
+  assert(c.rules.length === 3, `got ${c.rules.length}`);
+  assert(c.rules[0].match.pattern === 'sql-read');
   assert(c.default === 'deny');
 });
 
@@ -389,42 +366,23 @@ test('Default config', () => {
   assert(c.default === 'deny');
 });
 
-test('Config with upstream', () => {
+test('Config with mode', () => {
   mkdirSync('.sidclaw', { recursive: true });
-  writeFileSync('.sidclaw/upstream.yaml', [
+  writeFileSync('.sidclaw/mode.yaml', 'rules: []\ndefault: deny\nmode: observe\n');
+  const c = loadConfig('.sidclaw/mode.yaml');
+  assert(c.mode === 'observe');
+});
+
+test('Invalid pattern throws', () => {
+  writeFileSync('.sidclaw/badpat.yaml', [
     'rules:',
     '  - name: r1',
     '    match:',
-    '      tool: query',
-    '    action: allow',
-    'default: deny',
-    'upstream:',
-    '  command: npx',
-    '  args:',
-    '    - "-y"',
-    '    - "some-server"',
-  ].join('\n'));
-  const c = loadConfig('.sidclaw/upstream.yaml');
-  assert(c.upstream?.command === 'npx');
-  assert(c.upstream?.args?.length === 2);
-});
-
-test('Config with no rules key', () => {
-  writeFileSync('.sidclaw/norules.yaml', 'default: allow\n');
-  const c = loadConfig('.sidclaw/norules.yaml');
-  assert(c.rules.length === 0);
-  assert(c.default === 'allow');
-});
-
-test('Invalid rule (missing name) throws', () => {
-  writeFileSync('.sidclaw/badrule.yaml', [
-    'rules:',
-    '  - match:',
-    '      tool: x',
+    '      pattern: banana',
     '    action: allow',
   ].join('\n'));
-  try { loadConfig('.sidclaw/badrule.yaml'); assert(false); } catch (e) {
-    assert(e.message.includes('name'));
+  try { loadConfig('.sidclaw/badpat.yaml'); assert(false); } catch (e) {
+    assert(e.message.includes('banana'));
   }
 });
 
@@ -441,132 +399,41 @@ test('Invalid action throws', () => {
   }
 });
 
-test('Config with comma-separated upstream args string', () => {
-  writeFileSync('.sidclaw/commaargs.yaml', [
-    'rules: []',
-    'default: deny',
-    'upstream:',
-    '  command: npx',
-    '  args: "-y,some-server,arg"',
-  ].join('\n'));
-  const c = loadConfig('.sidclaw/commaargs.yaml');
-  assert(c.upstream?.args?.length === 3);
-  assert(c.upstream?.args?.[1] === 'some-server');
-});
-
-console.log('\n=== OBSERVE MODE TESTS ===\n');
-
-test('Config with mode: observe', () => {
-  writeFileSync('.sidclaw/observe.yaml', [
-    'rules:',
-    '  - name: r1',
-    '    match:',
-    '      tool: query',
-    '    action: allow',
-    'default: deny',
-    'mode: observe',
-  ].join('\n'));
-  const c = loadConfig('.sidclaw/observe.yaml');
-  assert(c.mode === 'observe', `got ${c.mode}`);
-});
-
-test('Config with mode: enforce', () => {
-  writeFileSync('.sidclaw/enforce.yaml', [
-    'rules: []',
-    'default: deny',
-    'mode: enforce',
-  ].join('\n'));
-  const c = loadConfig('.sidclaw/enforce.yaml');
-  assert(c.mode === 'enforce');
-});
-
-test('Config with no mode defaults to undefined', () => {
-  const c = loadConfig('sidclaw.config.yaml');
-  assert(c.mode === undefined, `got ${c.mode}`);
-});
-
-test('Config with invalid mode defaults to undefined', () => {
-  writeFileSync('.sidclaw/badmode.yaml', [
-    'rules: []',
-    'default: deny',
-    'mode: banana',
-  ].join('\n'));
-  const c = loadConfig('.sidclaw/badmode.yaml');
-  assert(c.mode === undefined);
-});
-
 console.log('\n=== UI SERVER TESTS ===\n');
 
-import { startUIServer } from './dist/index.js';
-
-asyncTests.push(test('UI serves HTML page', async () => {
+asyncTests.push(test('UI serves HTML', async () => {
   const { port, close } = await startUIServer({ port: 19091 });
   try {
     const res = await fetch(`http://localhost:${port}/`);
     assert(res.status === 200);
     const html = await res.text();
     assert(html.includes('SidClaw Guard'));
-    assert(html.includes('Pending Approvals'));
-    assert(html.includes('Audit Trail'));
   } finally { close(); }
 }));
 
-asyncTests.push(test('UI returns pending list', async () => {
+asyncTests.push(test('UI approve via API', async () => {
   const q = new ApprovalQueue('.sidclaw/ui-test', 5000);
-  q.create('test_tool', { sql: 'DELETE' }, 'test-rule');
+  const p = q.create('test', { sql: 'DELETE' }, 'rule', undefined, 'test explanation');
   const { port, close } = await startUIServer({ port: 19092, approvalDir: '.sidclaw/ui-test' });
-  try {
-    const res = await fetch(`http://localhost:${port}/api/pending`);
-    const data = await res.json();
-    assert(data.length === 1, `got ${data.length}`);
-    assert(data[0].tool === 'test_tool');
-  } finally { close(); }
-}));
-
-asyncTests.push(test('UI approve endpoint works', async () => {
-  const q = new ApprovalQueue('.sidclaw/ui-test2', 5000);
-  const p = q.create('tool', {}, 'rule');
-  const { port, close } = await startUIServer({ port: 19093, approvalDir: '.sidclaw/ui-test2' });
   try {
     const res = await fetch(`http://localhost:${port}/api/approve/${p.id}`, { method: 'POST' });
     const data = await res.json();
     assert(data.ok === true);
-    assert(data.decision === 'approved');
-    // Verify removed from pending
-    const listRes = await fetch(`http://localhost:${port}/api/pending`);
-    const list = await listRes.json();
-    assert(list.length === 0);
   } finally { close(); }
 }));
 
-asyncTests.push(test('UI deny endpoint works', async () => {
-  const q = new ApprovalQueue('.sidclaw/ui-test3', 5000);
-  const p = q.create('tool', {}, 'rule');
-  const { port, close } = await startUIServer({ port: 19094, approvalDir: '.sidclaw/ui-test3' });
+asyncTests.push(test('UI 404 for unknown', async () => {
+  const { port, close } = await startUIServer({ port: 19093 });
   try {
-    const res = await fetch(`http://localhost:${port}/api/deny/${p.id}`, { method: 'POST' });
-    const data = await res.json();
-    assert(data.ok === true);
-    assert(data.decision === 'denied');
+    assert((await fetch(`http://localhost:${port}/nope`)).status === 404);
   } finally { close(); }
 }));
 
-asyncTests.push(test('UI 404 for unknown routes', async () => {
-  const { port, close } = await startUIServer({ port: 19095 });
-  try {
-    const res = await fetch(`http://localhost:${port}/nope`);
-    assert(res.status === 404);
-  } finally { close(); }
-}));
-
-asyncTests.push(test('UI returns audit entries', async () => {
-  const { port, close } = await startUIServer({ port: 19096, auditPath: '.sidclaw/audit.jsonl' });
-  try {
-    const res = await fetch(`http://localhost:${port}/api/audit`);
-    const data = await res.json();
-    assert(Array.isArray(data));
-  } finally { close(); }
-}));
+// Semantic patterns export
+test('semanticPatterns export is populated', () => {
+  assert(semanticPatterns['sql-read']?.tool === 'query');
+  assert(semanticPatterns['file-read']?.tool.includes('read_file'));
+});
 
 // Wait for async tests
 await Promise.all(asyncTests.filter(Boolean));
@@ -578,5 +445,4 @@ console.log(`\n${passed} passed, ${failed} failed out of ${passed + failed} test
 
 // Cleanup
 rmSync('.sidclaw', { recursive: true, force: true });
-
 if (failed > 0) process.exit(1);

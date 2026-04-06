@@ -19,8 +19,6 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
-  ErrorCode,
-  McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { GuardConfig } from './types.js';
 import { evaluate } from './policy.js';
@@ -61,8 +59,7 @@ export class MCPGuard {
   private registerHandlers(): void {
     // --- Tools: LIST (pass-through) ---
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const result = await this.upstream.listTools();
-      return result;
+      return await this.upstream.listTools();
     });
 
     // --- Tools: CALL (guarded) ---
@@ -79,7 +76,7 @@ export class MCPGuard {
       if (result.action === 'deny') {
         const reason = result.reason ?? `Denied by policy${result.rule ? `: ${result.rule.name}` : ''}`;
         this.log(`\x1b[31m✘ DENIED\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
-        this.log(`  Rule: ${result.rule?.name ?? 'default'}  Reason: ${reason}`);
+        this.log(`  ${result.explanation}`);
 
         this.audit.write({
           timestamp: new Date().toISOString(),
@@ -88,22 +85,20 @@ export class MCPGuard {
           decision: 'deny',
           rule: result.rule?.name,
           reason,
+          explanation: result.explanation,
           duration_ms: Date.now() - startTime,
           ...(observing ? { observe: true } : {}),
         });
 
         if (observing) {
-          // Observe mode: log but forward anyway
           return await this.upstream.callTool({ name: toolName, arguments: args });
         }
 
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `DENIED by SidClaw Guard: ${reason}\n\nTool: ${toolName}\nRule: ${result.rule?.name ?? 'default policy'}\n\nThis action was blocked by your MCP guardrails. Edit sidclaw.config.yaml to change policies.`,
-            },
-          ],
+          content: [{
+            type: 'text' as const,
+            text: `DENIED by SidClaw Guard: ${reason}\n\n${result.explanation}\n\nTool: ${toolName}\nRule: ${result.rule?.name ?? 'default policy'}`,
+          }],
           isError: true,
         };
       }
@@ -111,9 +106,8 @@ export class MCPGuard {
       // ---- APPROVE ----
       if (result.action === 'approve') {
         if (observing) {
-          // Observe mode: log but forward without waiting
           this.log(`\x1b[33m⏳ WOULD REQUIRE APPROVAL\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
-          this.log(`  Rule: ${result.rule?.name ?? 'default'}`);
+          this.log(`  ${result.explanation}`);
 
           this.audit.write({
             timestamp: new Date().toISOString(),
@@ -121,6 +115,7 @@ export class MCPGuard {
             args,
             decision: 'approve',
             rule: result.rule?.name,
+            explanation: result.explanation,
             status: 'approved',
             duration_ms: Date.now() - startTime,
             observe: true,
@@ -135,12 +130,14 @@ export class MCPGuard {
           args,
           result.rule?.name ?? 'default',
           result.reason,
+          result.explanation,
         );
 
         this.log(`\x1b[33m⏳ APPROVAL REQUIRED\x1b[0m  ${toolName}  ${this.summarize(args)}`);
-        this.log(`  Rule: ${result.rule?.name ?? 'default'}`);
+        this.log(`  ${result.explanation}`);
         this.log(`  Approve: npx sidclaw-mcp-guard approve ${pending.id}`);
         this.log(`  Deny:    npx sidclaw-mcp-guard deny ${pending.id}`);
+        this.log(`  Dashboard: http://localhost:9091`);
 
         this.audit.write({
           timestamp: new Date().toISOString(),
@@ -148,11 +145,11 @@ export class MCPGuard {
           args,
           decision: 'approve',
           rule: result.rule?.name,
+          explanation: result.explanation,
           approval_id: pending.id,
           status: 'pending',
         });
 
-        // Block and wait for decision
         const decision = await this.approvals.waitForDecision(pending.id);
 
         if (decision === 'approved') {
@@ -167,16 +164,11 @@ export class MCPGuard {
             status: 'approved',
             duration_ms: Date.now() - startTime,
           });
-
           return await this.upstream.callTool({ name: toolName, arguments: args });
         }
 
-        // Denied or expired
         const status = decision === 'expired' ? 'expired' : 'denied';
-        const reason = decision === 'expired'
-          ? 'Approval timed out'
-          : 'Denied by reviewer';
-
+        const reason = decision === 'expired' ? 'Approval timed out' : 'Denied by reviewer';
         this.log(`\x1b[31m✘ ${reason.toUpperCase()}\x1b[0m  ${toolName}  (${pending.id})`);
 
         this.audit.write({
@@ -191,12 +183,10 @@ export class MCPGuard {
         });
 
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `${reason}: ${toolName}\n\nApproval ID: ${pending.id}\nThis action required human approval and was ${status}.`,
-            },
-          ],
+          content: [{
+            type: 'text' as const,
+            text: `${reason}: ${toolName}\n\nApproval ID: ${pending.id}\nThis action required human approval and was ${status}.`,
+          }],
           isError: true,
         };
       }
@@ -204,7 +194,7 @@ export class MCPGuard {
       // ---- ALLOW ----
       this.log(`\x1b[32m✔ ALLOWED\x1b[0m  ${toolName}  ${this.summarize(args)}${modeTag}`);
       if (result.rule) {
-        this.log(`  Rule: ${result.rule.name}`);
+        this.log(`  ${result.explanation}`);
       }
 
       this.audit.write({
@@ -213,6 +203,7 @@ export class MCPGuard {
         args,
         decision: 'allow',
         rule: result.rule?.name,
+        explanation: result.explanation,
         duration_ms: Date.now() - startTime,
         ...(observing ? { observe: true } : {}),
       });
@@ -222,11 +213,7 @@ export class MCPGuard {
 
     // --- Resources: pass-through ---
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
-      try {
-        return await this.upstream.listResources();
-      } catch {
-        return { resources: [] };
-      }
+      try { return await this.upstream.listResources(); } catch { return { resources: [] }; }
     });
 
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
@@ -235,11 +222,7 @@ export class MCPGuard {
 
     // --- Prompts: pass-through ---
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
-      try {
-        return await this.upstream.listPrompts();
-      } catch {
-        return { prompts: [] };
-      }
+      try { return await this.upstream.listPrompts(); } catch { return { prompts: [] }; }
     });
 
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
@@ -260,6 +243,12 @@ export class MCPGuard {
         'No upstream MCP server configured.\n' +
         'Set upstream.command in sidclaw.config.yaml or use --upstream flag.',
       );
+    }
+
+    // Clean up stale approvals from previous sessions
+    const cleaned = this.approvals.cleanup();
+    if (cleaned > 0) {
+      this.log(`Cleaned ${cleaned} stale approval(s) from previous session`);
     }
 
     // Connect to upstream MCP server
@@ -289,9 +278,7 @@ export class MCPGuard {
     // Graceful shutdown
     const shutdown = async () => {
       this.log('Shutting down...');
-      try {
-        await this.upstream.close();
-      } catch { /* ignore */ }
+      try { await this.upstream.close(); } catch { /* ignore */ }
       process.exit(0);
     };
     process.on('SIGINT', shutdown);

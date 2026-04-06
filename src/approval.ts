@@ -2,7 +2,7 @@
  * File-based approval queue.
  *
  * When a tool call requires approval, a pending file is created.
- * A human reviews and approves/denies via the CLI.
+ * A human reviews and approves/denies via the CLI or dashboard.
  * The guard polls the file for the decision.
  */
 
@@ -11,6 +11,7 @@ import {
   readFileSync,
   readdirSync,
   mkdirSync,
+  unlinkSync,
   existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -35,6 +36,7 @@ export class ApprovalQueue {
     args: Record<string, unknown>,
     ruleName: string,
     reason?: string,
+    explanation?: string,
   ): PendingApproval {
     const id = randomBytes(4).toString('hex');
     const approval: PendingApproval = {
@@ -44,6 +46,7 @@ export class ApprovalQueue {
       args,
       rule: ruleName,
       reason,
+      explanation,
     };
     writeFileSync(join(this.dir, `${id}.json`), JSON.stringify(approval, null, 2));
     return approval;
@@ -65,6 +68,16 @@ export class ApprovalQueue {
       }
       await new Promise((r) => setTimeout(r, 500));
     }
+
+    // Mark as expired
+    try {
+      const data = JSON.parse(readFileSync(filePath, 'utf-8')) as PendingApproval;
+      if (!data.decision) {
+        data.decision = 'denied';
+        data.decided_at = new Date().toISOString();
+        writeFileSync(filePath, JSON.stringify(data, null, 2));
+      }
+    } catch { /* ignore */ }
 
     return 'expired';
   }
@@ -105,6 +118,42 @@ export class ApprovalQueue {
       })
       .filter((a): a is PendingApproval => a !== null && !a.decision)
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+
+  /**
+   * Clean up stale approval files (decided or older than maxAge).
+   * Returns count of files removed.
+   */
+  cleanup(maxAgeMs: number = 3600_000): number {
+    if (!existsSync(this.dir)) return 0;
+    const now = Date.now();
+    let removed = 0;
+
+    for (const f of readdirSync(this.dir).filter((f) => f.endsWith('.json'))) {
+      const filePath = join(this.dir, f);
+      try {
+        const data = JSON.parse(readFileSync(filePath, 'utf-8')) as PendingApproval;
+
+        // Remove decided approvals
+        if (data.decision) {
+          unlinkSync(filePath);
+          removed++;
+          continue;
+        }
+
+        // Remove stale undecided approvals (older than maxAge)
+        const age = now - new Date(data.timestamp).getTime();
+        if (age > maxAgeMs) {
+          unlinkSync(filePath);
+          removed++;
+        }
+      } catch {
+        // Corrupted file — remove it
+        try { unlinkSync(filePath); removed++; } catch { /* ignore */ }
+      }
+    }
+
+    return removed;
   }
 
   /**

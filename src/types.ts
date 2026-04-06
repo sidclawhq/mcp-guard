@@ -8,6 +8,18 @@ export type Action = 'allow' | 'deny' | 'approve';
 /** Guard operating mode. */
 export type GuardMode = 'enforce' | 'observe';
 
+/**
+ * Built-in semantic patterns for common matching scenarios.
+ * Users write `pattern: sql-read` instead of raw regex.
+ */
+export type SemanticPattern =
+  | 'sql-read'
+  | 'sql-write'
+  | 'sql-destructive'
+  | 'file-read'
+  | 'file-write'
+  | 'file-delete';
+
 /** A single policy rule. */
 export interface PolicyRule {
   /** Unique rule name. */
@@ -18,7 +30,9 @@ export interface PolicyRule {
   match: {
     /** Tool name — exact string or glob pattern (e.g. "query", "db_*"). */
     tool: string;
-    /** Argument matchers — key is arg name, value is a regex pattern. */
+    /** Semantic pattern — high-level shorthand (e.g. "sql-read"). Expands to args internally. */
+    pattern?: SemanticPattern;
+    /** Argument matchers — key is arg name, value is a regex pattern. Overrides pattern if both set. */
     args?: Record<string, string>;
   };
   /** What to do when matched. */
@@ -62,6 +76,8 @@ export interface PolicyResult {
   action: Action;
   rule?: PolicyRule;
   reason?: string;
+  /** Plain-English explanation of the decision. */
+  explanation: string;
 }
 
 /** An entry in the audit log. */
@@ -72,6 +88,8 @@ export interface AuditEntry {
   decision: Action;
   rule?: string;
   reason?: string;
+  /** Plain-English explanation. */
+  explanation?: string;
   approval_id?: string;
   status?: 'pending' | 'approved' | 'denied' | 'expired';
   duration_ms?: number;
@@ -87,6 +105,8 @@ export interface PendingApproval {
   args: Record<string, unknown>;
   rule: string;
   reason?: string;
+  /** Plain-English explanation of why approval is needed. */
+  explanation?: string;
   decision?: 'approved' | 'denied';
   decided_at?: string;
 }

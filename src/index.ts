@@ -1,19 +1,19 @@
 /**
  * SidClaw MCP Guard — Programmatic API
- *
- * Use this to integrate the guard into your own code.
  */
 
 export { MCPGuard } from './guard.js';
-export { evaluate } from './policy.js';
+export { evaluate, semanticPatterns } from './policy.js';
 export { AuditLog } from './audit.js';
 export { ApprovalQueue } from './approval.js';
 export { loadConfig, defaultConfig } from './config.js';
 export { startUIServer } from './ui.js';
+export { startMockServer } from './mock-server.js';
 
 export type {
   Action,
   GuardMode,
+  SemanticPattern,
   PolicyRule,
   GuardConfig,
   PolicyResult,

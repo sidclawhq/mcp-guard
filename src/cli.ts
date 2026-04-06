@@ -1,13 +1,5 @@
 /**
  * SidClaw MCP Guard — CLI
- *
- * Usage:
- *   sidclaw-mcp-guard                          Start the guard proxy
- *   sidclaw-mcp-guard demo [--interactive]     Run the SQL demo
- *   sidclaw-mcp-guard ui                       Start the approval dashboard
- *   sidclaw-mcp-guard approve <id>             Approve a pending request
- *   sidclaw-mcp-guard deny <id>                Deny a pending request
- *   sidclaw-mcp-guard list                     List pending approvals
  */
 
 import { existsSync } from 'node:fs';
@@ -16,6 +8,7 @@ import { loadConfig, defaultConfig } from './config.js';
 import { MCPGuard } from './guard.js';
 import { ApprovalQueue } from './approval.js';
 import { runDemo } from './demo.js';
+import { runQuickstart } from './quickstart.js';
 import { startUIServer } from './ui.js';
 import type { GuardConfig } from './types.js';
 
@@ -27,13 +20,20 @@ function printHelp(): void {
 \x1b[1msidclaw-mcp-guard\x1b[0m v${VERSION}
 Stop AI agents from doing dangerous things through MCP.
 
-\x1b[1mUSAGE\x1b[0m
+\x1b[1mGET STARTED\x1b[0m
+  sidclaw-mcp-guard quickstart               Set up a real guarded MCP server
+  sidclaw-mcp-guard demo                     Quick showcase of policy decisions
+  sidclaw-mcp-guard demo -i                  Interactive — try your own SQL
+
+\x1b[1mRUN\x1b[0m
   sidclaw-mcp-guard [options]                Start the guard proxy
-  sidclaw-mcp-guard demo [--interactive]     Run the SQL demo
-  sidclaw-mcp-guard ui [--port 9091]         Start the local approval dashboard
+  sidclaw-mcp-guard ui                       Open the approval dashboard
+
+\x1b[1mAPPROVALS\x1b[0m
   sidclaw-mcp-guard approve <id>             Approve a pending request
   sidclaw-mcp-guard deny <id>                Deny a pending request
   sidclaw-mcp-guard list                     List pending approvals
+  sidclaw-mcp-guard clean                    Remove stale approval files
 
 \x1b[1mOPTIONS\x1b[0m
   --config, -c <path>     Config file (default: sidclaw.config.yaml)
@@ -42,24 +42,20 @@ Stop AI agents from doing dangerous things through MCP.
   --observe               Observe mode: log decisions but forward all calls
   --ui                    Start the approval dashboard alongside the proxy
   --ui-port <port>        Dashboard port (default: 9091)
-  --approval-dir <dir>    Approval queue directory (default: .sidclaw/pending)
   --help, -h              Show this help
   --version, -v           Show version
 
 \x1b[1mEXAMPLES\x1b[0m
-  npx sidclaw-mcp-guard demo
-  npx sidclaw-mcp-guard --upstream npx --upstream-args "-y,@modelcontextprotocol/server-postgres,postgresql://localhost/mydb"
+  npx sidclaw-mcp-guard quickstart
+  npx sidclaw-mcp-guard demo -i
   npx sidclaw-mcp-guard --ui --upstream npx --upstream-args "-y,@modelcontextprotocol/server-postgres,postgresql://localhost/mydb"
-  npx sidclaw-mcp-guard --observe --upstream npx --upstream-args "-y,@modelcontextprotocol/server-filesystem,/tmp"
-  npx sidclaw-mcp-guard ui
-  npx sidclaw-mcp-guard approve a1b2c3d4
 
 \x1b[1mDOCS\x1b[0m
   https://github.com/sidclawhq/mcp-guard
 `);
 }
 
-type Command = 'proxy' | 'demo' | 'ui' | 'approve' | 'deny' | 'list' | 'help' | 'version';
+type Command = 'proxy' | 'quickstart' | 'demo' | 'ui' | 'approve' | 'deny' | 'list' | 'clean' | 'help' | 'version';
 
 interface ParsedArgs {
   command: Command;
@@ -89,6 +85,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     const arg = args[i]!;
 
     switch (arg) {
+      case 'quickstart':
+        result.command = 'quickstart';
+        break;
       case 'demo':
         result.command = 'demo';
         break;
@@ -106,16 +105,16 @@ function parseArgs(argv: string[]): ParsedArgs {
       case 'list':
         result.command = 'list';
         break;
-      case '--help':
-      case '-h':
+      case 'clean':
+        result.command = 'clean';
+        break;
+      case '--help': case '-h':
         result.command = 'help';
         break;
-      case '--version':
-      case '-v':
+      case '--version': case '-v':
         result.command = 'version';
         break;
-      case '--config':
-      case '-c':
+      case '--config': case '-c':
         result.configPath = args[++i] ?? result.configPath;
         break;
       case '--upstream':
@@ -127,7 +126,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--approval-dir':
         result.approvalDir = args[++i];
         break;
-      case '--interactive':
+      case '--interactive': case '-i':
         result.interactive = true;
         break;
       case '--observe':
@@ -136,10 +135,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--ui':
         result.ui = true;
         break;
-      case '--ui-port':
-        result.uiPort = parseInt(args[++i] ?? '9091', 10);
-        break;
-      case '--port':
+      case '--ui-port': case '--port':
         result.uiPort = parseInt(args[++i] ?? '9091', 10);
         break;
     }
@@ -160,21 +156,20 @@ async function main(): Promise<void> {
       process.stderr.write(`sidclaw-mcp-guard v${VERSION}\n`);
       return;
 
+    case 'quickstart':
+      await runQuickstart({ uiPort: parsed.uiPort });
+      return;
+
     case 'demo':
       await runDemo(parsed.interactive);
       return;
 
     case 'ui': {
-      // Standalone approval dashboard
       const uiPort = parsed.uiPort ?? 9091;
       const approvalDir = parsed.approvalDir ?? '.sidclaw/pending';
       const auditPath = getAuditPath(parsed);
 
-      const { port } = await startUIServer({
-        port: uiPort,
-        approvalDir,
-        auditPath,
-      });
+      const { port } = await startUIServer({ port: uiPort, approvalDir, auditPath });
 
       process.stderr.write(`\n\x1b[1m🛡️  SidClaw Guard — Approval Dashboard\x1b[0m\n`);
       process.stderr.write(`   http://localhost:${port}\n\n`);
@@ -190,17 +185,12 @@ async function main(): Promise<void> {
         process.stderr.write(`Usage: sidclaw-mcp-guard ${parsed.command} <id>\n`);
         process.exit(1);
       }
-
-      const dir = parsed.approvalDir ?? '.sidclaw/pending';
-      const queue = new ApprovalQueue(dir);
-
+      const queue = new ApprovalQueue(parsed.approvalDir ?? '.sidclaw/pending');
       try {
         const decision = parsed.command === 'approve' ? 'approved' : 'denied';
         const result = queue.decide(parsed.approvalId, decision);
         const icon = decision === 'approved' ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✘\x1b[0m';
-        process.stderr.write(
-          `${icon} ${decision}: ${result.tool}(${summarize(result.args)})\n`,
-        );
+        process.stderr.write(`${icon} ${decision}: ${result.tool}(${summarize(result.args)})\n`);
       } catch (err) {
         process.stderr.write(`Error: ${(err as Error).message}\n`);
         process.exit(1);
@@ -209,32 +199,41 @@ async function main(): Promise<void> {
     }
 
     case 'list': {
-      const dir = parsed.approvalDir ?? '.sidclaw/pending';
-      const queue = new ApprovalQueue(dir);
+      const queue = new ApprovalQueue(parsed.approvalDir ?? '.sidclaw/pending');
       const pending = queue.list();
-
       if (pending.length === 0) {
         process.stderr.write('No pending approvals.\n');
         return;
       }
-
       process.stderr.write(`\n\x1b[1m${pending.length} pending approval(s):\x1b[0m\n\n`);
       for (const p of pending) {
+        const age = Math.round((Date.now() - new Date(p.timestamp).getTime()) / 1000);
+        const ageStr = age < 60 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;
         process.stderr.write(
           `  \x1b[33m⏳\x1b[0m \x1b[1m${p.id}\x1b[0m  ${p.tool}(${summarize(p.args)})\n` +
-          `     Rule: ${p.rule}  Time: ${p.timestamp}\n\n`,
+          (p.explanation ? `     ${p.explanation}\n` : '') +
+          `     Rule: ${p.rule}  ${ageStr}\n\n`,
         );
       }
       process.stderr.write(
-        `Approve: npx sidclaw-mcp-guard approve <id>\n` +
-        `Deny:    npx sidclaw-mcp-guard deny <id>\n` +
-        `Or open: npx sidclaw-mcp-guard ui\n\n`,
+        `  Approve: npx sidclaw-mcp-guard approve <id>\n` +
+        `  Deny:    npx sidclaw-mcp-guard deny <id>\n` +
+        `  Or open: npx sidclaw-mcp-guard ui\n\n`,
+      );
+      return;
+    }
+
+    case 'clean': {
+      const queue = new ApprovalQueue(parsed.approvalDir ?? '.sidclaw/pending');
+      const removed = queue.cleanup();
+      process.stderr.write(removed > 0
+        ? `\x1b[32m✔\x1b[0m Cleaned ${removed} stale approval file(s).\n`
+        : 'Nothing to clean.\n',
       );
       return;
     }
 
     case 'proxy': {
-      // Load config
       let config: GuardConfig;
       const configPath = resolve(parsed.configPath);
 
@@ -244,31 +243,22 @@ async function main(): Promise<void> {
         config = defaultConfig();
       } else {
         process.stderr.write(
-          `Error: Config file not found: ${parsed.configPath}\n` +
-          `Create a sidclaw.config.yaml or use --upstream flag.\n\n` +
-          `Quick start:\n` +
-          `  npx sidclaw-mcp-guard demo\n\n`,
+          `Config file not found: ${parsed.configPath}\n\n` +
+          `Get started:\n` +
+          `  npx sidclaw-mcp-guard quickstart    Set up a real guarded MCP server\n` +
+          `  npx sidclaw-mcp-guard demo          Quick policy showcase\n\n`,
         );
         process.exit(1);
       }
 
       // CLI overrides
       if (parsed.upstream) {
-        config.upstream = {
-          command: parsed.upstream,
-          args: parsed.upstreamArgs,
-        };
+        config.upstream = { command: parsed.upstream, args: parsed.upstreamArgs };
       }
-      if (parsed.observe) {
-        config.mode = 'observe';
-      }
-      if (parsed.approvalDir) {
-        config.approval = { ...config.approval, dir: parsed.approvalDir };
-      }
+      if (parsed.observe) config.mode = 'observe';
+      if (parsed.approvalDir) config.approval = { ...config.approval, dir: parsed.approvalDir };
 
-      // Start guard proxy
       const guard = new MCPGuard(config);
-
       try {
         await guard.start();
       } catch (err) {
@@ -281,12 +271,11 @@ async function main(): Promise<void> {
         const uiPort = parsed.uiPort ?? 9091;
         const approvalDir = config.approval?.dir ?? '.sidclaw/pending';
         const auditPath = config.audit?.path ?? '.sidclaw/audit.jsonl';
-
         try {
           const { port } = await startUIServer({ port: uiPort, approvalDir, auditPath });
           process.stderr.write(`[sidclaw]    Dashboard: http://localhost:${port}\n`);
         } catch (err) {
-          process.stderr.write(`[sidclaw] Warning: could not start UI on port ${uiPort}: ${(err as Error).message}\n`);
+          process.stderr.write(`[sidclaw] Warning: dashboard failed on port ${uiPort}: ${(err as Error).message}\n`);
         }
       }
       return;
@@ -297,8 +286,7 @@ async function main(): Promise<void> {
 function getAuditPath(parsed: ParsedArgs): string {
   if (existsSync(resolve(parsed.configPath))) {
     try {
-      const config = loadConfig(resolve(parsed.configPath));
-      return config.audit?.path ?? '.sidclaw/audit.jsonl';
+      return loadConfig(resolve(parsed.configPath)).audit?.path ?? '.sidclaw/audit.jsonl';
     } catch { /* ignore */ }
   }
   return '.sidclaw/audit.jsonl';

@@ -4,9 +4,13 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { load } from 'js-yaml';
-import type { GuardConfig, PolicyRule, Action, GuardMode } from './types.js';
+import type { GuardConfig, PolicyRule, Action, GuardMode, SemanticPattern } from './types.js';
 
 const VALID_ACTIONS: Action[] = ['allow', 'deny', 'approve'];
+const VALID_PATTERNS: SemanticPattern[] = [
+  'sql-read', 'sql-write', 'sql-destructive',
+  'file-read', 'file-write', 'file-delete',
+];
 
 /**
  * Load guard config from a YAML file.
@@ -25,7 +29,6 @@ export function loadConfig(path: string): GuardConfig {
 
   const rules = parseRules(parsed['rules']);
   const defaultAction = parseAction(parsed['default'], 'deny');
-
   const mode = parseMode(parsed['mode']);
 
   return {
@@ -59,11 +62,26 @@ function parseRules(raw: unknown): PolicyRule[] {
       throw new Error(`Rule '${r['name']}' must have a valid 'action' (allow, deny, approve)`);
     }
 
+    // Parse semantic pattern
+    const patternRaw = match['pattern'] as string | undefined;
+    let pattern: SemanticPattern | undefined;
+    if (patternRaw) {
+      if (VALID_PATTERNS.includes(patternRaw as SemanticPattern)) {
+        pattern = patternRaw as SemanticPattern;
+      } else {
+        throw new Error(
+          `Rule '${r['name']}' has invalid pattern '${patternRaw}'. ` +
+          `Valid patterns: ${VALID_PATTERNS.join(', ')}`,
+        );
+      }
+    }
+
     return {
       name: r['name'] as string,
       description: r['description'] as string | undefined,
       match: {
         tool: (match['tool'] as string) || '*',
+        pattern,
         args: match['args'] as Record<string, string> | undefined,
       },
       action,
