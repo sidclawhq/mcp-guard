@@ -24,7 +24,7 @@ import type { GuardConfig } from './types.js';
 import { evaluate } from './policy.js';
 import { AuditLog } from './audit.js';
 import { ApprovalQueue } from './approval.js';
-import { SHIELD_MINI } from './banner.js';
+import { SID_MINI } from './banner.js';
 
 export class MCPGuard {
   private server: Server;
@@ -267,7 +267,7 @@ export class MCPGuard {
     await this.server.connect(serverTransport);
 
     const mode = this.config.mode ?? 'enforce';
-    process.stderr.write('\n' + SHIELD_MINI + '\n\n');
+    process.stderr.write('\n' + SID_MINI + '\n\n');
     this.log(`   Mode:     ${mode}${mode === 'observe' ? ' (log only, all calls forwarded)' : ''}`);
     this.log(`   Rules:    ${this.config.rules.length} loaded`);
     this.log(`   Default:  ${this.config.default}`);

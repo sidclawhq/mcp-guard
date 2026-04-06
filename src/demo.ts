@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { evaluate } from './policy.js';
 import { AuditLog } from './audit.js';
-import { SHIELD, flowAllow, flowHold, flowBlock } from './banner.js';
+import { SID_BANNER, flowAllow, flowHold, flowBlock, sidReaction } from './banner.js';
 import type { PolicyRule } from './types.js';
 
 const DEMO_RULES: PolicyRule[] = [
@@ -51,8 +51,7 @@ export async function runDemo(interactive: boolean = false): Promise<void> {
   try { writeFileSync('.sidclaw/audit.jsonl', ''); } catch { /* ignore */ }
   const audit = new AuditLog('.sidclaw/audit.jsonl');
 
-  w(SHIELD);
-  w('\n');
+  w(SID_BANNER);
   w('  \x1b[2mThe policy engine and audit trail are real.\x1b[0m\n');
   w('  \x1b[2mThe database is simulated so you don\'t need one.\x1b[0m\n');
   w('\n');
@@ -134,14 +133,17 @@ function evaluateAndPrint(
 
   if (result.action === 'allow') {
     w(flowAllow('query', sql));
+    w(`${sidReaction('allow')}\n`);
     w(`    ${result.explanation}\n`);
     if (mockResult) w(`    \x1b[2m→ ${mockResult}\x1b[0m\n`);
   } else if (result.action === 'approve') {
     w(flowHold('query', sql));
+    w(`${sidReaction('approve')}\n`);
     w(`    ${result.explanation}\n`);
     if (mockResult) w(`    \x1b[2m→ Would forward after approval: ${mockResult}\x1b[0m\n`);
   } else {
     w(flowBlock('query', sql));
+    w(`${sidReaction('deny')}\n`);
     w(`    ${result.explanation}\n`);
   }
 
