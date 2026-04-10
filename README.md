@@ -42,13 +42,6 @@ Creates a config, writes `.mcp.json` for Claude Code, and starts the approval da
   <img src="assets/demo.svg" alt="sidclaw-mcp-guard demo — SQL and shell guardrails" width="700" />
 </p>
 
----
-
-## How it works
-
-<p align="center">
-  <img src="assets/guard-flow.png" alt="SidClaw Guard — intercepts tool calls, evaluates rules, allows/blocks/holds" width="420" />
-</p>
 
 ---
 
