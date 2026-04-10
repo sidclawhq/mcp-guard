@@ -44,23 +44,9 @@ Creates a config, starts the approval dashboard, and prints the MCP config to pa
 
 ## How it works
 
-```
-  Claude Code / Cursor / Any MCP Client
-           │
-           │  MCP (stdio)
-           ▼
-    ┌──────────────────┐
-    │  SidClaw Guard   │  ← intercepts every tool call
-    │                  │  ← evaluates against your rules
-    │  allow / block / │  ← decides in microseconds
-    │  hold            │
-    └────────┬─────────┘
-             │  MCP (stdio)
-             ▼
-    ┌──────────────────┐
-    │  Your MCP Server │  ← only receives allowed calls
-    └──────────────────┘
-```
+<p align="center">
+  <img src="assets/guard-flow.png" alt="SidClaw Guard — intercepts tool calls, evaluates rules, allows/blocks/holds" width="420" />
+</p>
 
 ---
 
