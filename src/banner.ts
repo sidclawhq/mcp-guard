@@ -2,10 +2,6 @@
  * Sid — the SidClaw Guard mascot.
  *
  * A friendly badger with claws and a shield.
- * Three moods matching the three decision types:
- *   happy    — shield up, all clear (allow)
- *   thinking — shield raised, uncertain (hold for approval)
- *   angry    — claws out, blocking (deny)
  */
 
 // Colors
@@ -20,17 +16,16 @@ const C = '\x1b[36m';
 const BR = '\x1b[33m';     // brown (yellow serves as brown)
 
 // ─────────────────────────────────────────────────
-//  Sid — the badger guard
+//  Banners
 // ─────────────────────────────────────────────────
 
 /**
  * Banner — Sid with product name. For demo and quickstart.
  */
 export const SID_BANNER = `
-${BR}    (\\  /)${R}
-${BR}    ( ${C}o${R}${BR}.${C}o${R}${BR} )${R}     ${BOLD}S I D C L A W   G U A R D${R}
-${BR}    /${R} ${B}[${BOLD}✓${R}${B}]${R} ${BR}\\${R}     ${D}MCP guardrails for dangerous tool calls${R}
-${BR}   ^^${R}${B} ▀▀▀${R} ${BR}^^${R}
+${BR}  (\\  /)${R}
+${BR}  ( ${C}o${R}${BR}.${C}o${R}${BR} )${R}  ${BOLD}SidClaw Guard${R}
+${BR}   /${R}${B}[${BOLD}✓${R}${B}]${R}${BR}\\${R}   ${D}MCP guardrails for dangerous tool calls${R}
 `;
 
 /**
@@ -42,7 +37,7 @@ export const SID_MINI = [
 ].join('\n');
 
 // ─────────────────────────────────────────────────
-//  Inline reactions — 1 line each, after decisions
+//  Inline reactions — used by guard proxy at runtime
 // ─────────────────────────────────────────────────
 
 export function sidReaction(decision: 'allow' | 'deny' | 'approve'): string {
@@ -57,38 +52,25 @@ export function sidReaction(decision: 'allow' | 'deny' | 'approve'): string {
 }
 
 // ─────────────────────────────────────────────────
-//  Flow checkpoint diagrams
+//  Decision formatters — one compact block each
 // ─────────────────────────────────────────────────
 
-export function flowAllow(_tool: string, summary: string): string {
-  const s = summary.length > 35 ? summary.substring(0, 32) + '...' : summary;
-  return `
-${D}  ┌────────┐      ┌────────────┐      ┌──────────┐${R}
-${D}  │${R} Agent  ${D}│${R}${C}─────▶${R}${D}│${R}${B} ▪ Guard ▪ ${R}${D}│${R}${G}─────▶${R}${D}│${R} Upstream ${D}│${R}
-${D}  └────────┘      └─────┬──────┘      └──────────┘${R}
-                        ${G}│${R}
-                   ${G}✔ ALLOWED${R}
-                   ${D}${s}${R}`;
+export function fmtAllow(sql: string, explanation: string, mockResult?: string): string {
+  let out = `  ${G}✔ ALLOW${R}   ${sql}\n`;
+  out += `  ${D}         ${explanation}${R}\n`;
+  if (mockResult) out += `  ${D}         → ${mockResult}${R}\n`;
+  return out;
 }
 
-export function flowHold(_tool: string, summary: string): string {
-  const s = summary.length > 35 ? summary.substring(0, 32) + '...' : summary;
-  return `
-${D}  ┌────────┐      ┌────────────┐      ┌──────────┐${R}
-${D}  │${R} Agent  ${D}│${R}${C}─────▶${R}${D}│${R}${B} ▪ Guard ▪ ${R}${D}│${R}${Y}──${BOLD}?${R}${Y}──▶${R}${D}│${R} Upstream ${D}│${R}
-${D}  └────────┘      └─────┬──────┘      └──────────┘${R}
-                        ${Y}│${R}
-                   ${Y}⏳ HELD FOR APPROVAL${R}
-                   ${D}${s}${R}`;
+export function fmtHold(sql: string, explanation: string, mockResult?: string): string {
+  let out = `  ${Y}⏳ HOLD${R}    ${sql}\n`;
+  out += `  ${D}         ${explanation}${R}\n`;
+  if (mockResult) out += `  ${D}         → Would forward after approval: ${mockResult}${R}\n`;
+  return out;
 }
 
-export function flowBlock(_tool: string, summary: string): string {
-  const s = summary.length > 35 ? summary.substring(0, 32) + '...' : summary;
-  return `
-${D}  ┌────────┐      ┌────────────┐      ┌──────────┐${R}
-${D}  │${R} Agent  ${D}│${R}${C}─────▶${R}${D}│${R}${B} ▪ Guard ▪ ${R}${D}│${R}  ${RED}╳${R}   ${D}│${R} Upstream ${D}│${R}
-${D}  └────────┘      └─────┬──────┘      └──────────┘${R}
-                        ${RED}│${R}
-                   ${RED}✘ BLOCKED${R}
-                   ${D}${s}${R}`;
+export function fmtBlock(sql: string, explanation: string): string {
+  let out = `  ${RED}✘ BLOCK${R}   ${sql}\n`;
+  out += `  ${D}         ${explanation}${R}\n`;
+  return out;
 }

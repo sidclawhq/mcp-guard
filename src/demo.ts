@@ -8,7 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { evaluate } from './policy.js';
 import { AuditLog } from './audit.js';
-import { SID_BANNER, flowAllow, flowHold, flowBlock, sidReaction } from './banner.js';
+import { SID_BANNER, fmtAllow, fmtHold, fmtBlock } from './banner.js';
 import type { PolicyRule } from './types.js';
 
 const DEMO_RULES: PolicyRule[] = [
@@ -52,9 +52,10 @@ export async function runDemo(interactive: boolean = false): Promise<void> {
   const audit = new AuditLog('.sidclaw/audit.jsonl');
 
   w(SID_BANNER);
-  w('  \x1b[2mThe policy engine and audit trail are real.\x1b[0m\n');
-  w('  \x1b[2mThe database is simulated so you don\'t need one.\x1b[0m\n');
-  w('\n');
+  w('  \x1b[2mPolicy engine is real · database is simulated\x1b[0m\n\n');
+  w('  \x1b[2mAgent  →  \x1b[0m\x1b[34mGuard\x1b[0m\x1b[2m  →  Upstream\x1b[0m\n');
+  w('  \x1b[2m          ↓ allow / hold / block\x1b[0m\n\n');
+  w('  \x1b[2m───────────────────────────────────────────────\x1b[0m\n\n');
 
   if (interactive) {
     await interactiveMode(w, audit);
@@ -63,22 +64,13 @@ export async function runDemo(interactive: boolean = false): Promise<void> {
   }
 
   // Show audit trail
-  w('  \x1b[2m─── Audit log (.sidclaw/audit.jsonl) ───\x1b[0m\n\n');
-  for (const entry of audit.read()) {
-    const icon = entry.decision === 'allow' ? '\x1b[32m✔\x1b[0m'
-      : entry.decision === 'deny' ? '\x1b[31m✘\x1b[0m' : '\x1b[33m⏳\x1b[0m';
-    const sql = (entry.args['sql'] as string) ?? '';
-    const short = sql.length > 45 ? sql.substring(0, 42) + '...' : sql;
-    w(`    ${icon} ${entry.decision.padEnd(7)} ${short}\n`);
-    if (entry.explanation) {
-      w(`      \x1b[2m${entry.explanation}\x1b[0m\n`);
-    }
-  }
+  w('  \x1b[2m───────────────────────────────────────────────\x1b[0m\n');
+  const entries = audit.read();
+  w(`  \x1b[2mAudit log → .sidclaw/audit.jsonl (${entries.length} entries written)\x1b[0m\n\n`);
 
-  w('\n');
   w('  \x1b[1mNext:\x1b[0m\n');
-  w('    npx sidclaw-mcp-guard quickstart   Set up a real guarded MCP server\n');
-  w('    npx sidclaw-mcp-guard demo -i      Try your own SQL queries\n');
+  w('    npx sidclaw-mcp-guard quickstart   \x1b[2mSet up a real guarded MCP server\x1b[0m\n');
+  w('    npx sidclaw-mcp-guard demo -i      \x1b[2mTry your own SQL queries\x1b[0m\n');
   w('\n');
 }
 
@@ -132,19 +124,11 @@ function evaluateAndPrint(
   const result = evaluate('query', { sql }, DEMO_RULES, 'deny');
 
   if (result.action === 'allow') {
-    w(flowAllow('query', sql));
-    w(`${sidReaction('allow')}\n`);
-    w(`    ${result.explanation}\n`);
-    if (mockResult) w(`    \x1b[2m→ ${mockResult}\x1b[0m\n`);
+    w(fmtAllow(sql, result.explanation ?? '', mockResult));
   } else if (result.action === 'approve') {
-    w(flowHold('query', sql));
-    w(`${sidReaction('approve')}\n`);
-    w(`    ${result.explanation}\n`);
-    if (mockResult) w(`    \x1b[2m→ Would forward after approval: ${mockResult}\x1b[0m\n`);
+    w(fmtHold(sql, result.explanation ?? '', mockResult));
   } else {
-    w(flowBlock('query', sql));
-    w(`${sidReaction('deny')}\n`);
-    w(`    ${result.explanation}\n`);
+    w(fmtBlock(sql, result.explanation ?? ''));
   }
 
   w('\n');
