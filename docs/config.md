@@ -100,6 +100,28 @@ default: allow    # Allow by default
 default: approve  # Require approval by default
 ```
 
+> **Terminology:** The `approve` action in config means "hold for human approval." In output, it displays as `HOLD` (describing the state of the call while waiting). The config value stays `approve` because that's what the reviewer does.
+
+## Semantic patterns
+
+Built-in patterns for common tool categories:
+
+| Pattern | Matches | Use case |
+|---------|---------|----------|
+| `sql-read` | SELECT, EXPLAIN, SHOW, DESCRIBE, WITH | Database read queries |
+| `sql-write` | INSERT, UPDATE, DELETE, MERGE, UPSERT | Database data changes |
+| `sql-destructive` | DROP, TRUNCATE, ALTER, CREATE, GRANT, REVOKE | Database schema/permission changes |
+| `file-read` | read_file, list_directory, search_files, get_file_info | File read operations |
+| `file-write` | write_file, edit_file, move_file, create_directory | File write operations |
+| `file-delete` | delete_file, remove_directory | File deletion |
+| `shell-safe` | ls, pwd, whoami, echo, cat, head, tail, wc, date, uname | Safe shell commands |
+| `shell-risky` | mv, cp, mkdir, chmod, chown, curl, wget, npm, pip | Risky shell commands |
+| `shell-destructive` | rm, rmdir, kill, killall, shutdown, reboot, mkfs, dd, sudo | Destructive shell commands |
+
+Shell patterns match against the `command` argument of tools named `execute`, `run_command`, `shell`, `exec`, or `run`. For compound commands (using `;`, `&&`, `||`, `|`), each sub-command is evaluated and the most restrictive action wins.
+
+SQL patterns similarly handle compound statements: `SELECT 1; DROP TABLE users` is classified as `sql-destructive` because `DROP` is more restrictive than `SELECT`.
+
 ## Upstream
 
 The MCP server to wrap:

@@ -1,5 +1,8 @@
 node_modules/
 dist/
 .sidclaw/
+.mcp.json
+.superpowers/
 *.tsbuildinfo
+*.tgz
 .DS_Store

@@ -36,9 +36,11 @@ npx sidclaw-mcp-guard@latest demo
 npx sidclaw-mcp-guard@latest quickstart
 ```
 
-Creates a config, starts the approval dashboard, and prints the MCP config to paste into Claude Code or Cursor.
+Creates a config, writes `.mcp.json` for Claude Code, and starts the approval dashboard.
 
-<!-- TODO: terminal recording GIF -->
+<p align="center">
+  <img src="assets/demo.svg" alt="sidclaw-mcp-guard demo — SQL and shell guardrails" width="700" />
+</p>
 
 ---
 
@@ -79,7 +81,9 @@ rules:
 default: deny
 ```
 
-Available patterns: `sql-read`, `sql-write`, `sql-destructive`, `file-read`, `file-write`, `file-delete`.
+Available patterns: `sql-read`, `sql-write`, `sql-destructive`, `file-read`, `file-write`, `file-delete`, `shell-safe`, `shell-risky`, `shell-destructive`.
+
+> **Note:** In config, the action is called `approve` (what the user writes). In output, it displays as `HOLD` (describing the state of the call while waiting for human review).
 
 Power users can still use regex via `match.args` — see [docs/config.md](docs/config.md).
 
@@ -95,7 +99,7 @@ sidclaw-mcp-guard --ui --upstream npx --upstream-args "..."
 
 Open `http://localhost:9091` — see pending requests, approve or deny with one click, inspect the audit trail.
 
-<!-- TODO: screenshot of approval dashboard -->
+<!-- Dashboard screenshot will be added after first release -->
 
 Or use the CLI: `npx sidclaw-mcp-guard approve <id>`
 
@@ -150,6 +154,7 @@ Every decision is logged to `.sidclaw/audit.jsonl`:
 |--------|---------------------|----------------|
 | `@modelcontextprotocol/server-postgres` | SQL queries | [examples/sql-demo](examples/sql-demo/) |
 | `@modelcontextprotocol/server-filesystem` | File operations | [examples/filesystem-demo](examples/filesystem-demo/) |
+| Shell-execution servers | Shell commands | [examples/shell-demo](examples/shell-demo/) |
 | `@modelcontextprotocol/server-github` | Repo operations | |
 | Any custom MCP server | Any tool calls | |
 
@@ -201,6 +206,25 @@ SidClaw Guard is the local-first entry point to [SidClaw](https://sidclaw.com). 
 - [Config Reference](docs/config.md)
 - [How It Works](docs/how-it-works.md)
 - [FAQ](docs/faq.md)
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/sidclawhq/mcp-guard.git
+cd mcp-guard
+npm install
+npm run build
+npm test
+```
+
+Run locally:
+
+```bash
+node dist/cli.js demo
+node dist/cli.js quickstart
+```
 
 ---
 

@@ -80,20 +80,40 @@ export async function startMockServer(): Promise<void> {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [{
-      name: 'query',
-      description: 'Execute a SQL query against the database',
-      inputSchema: {
-        type: 'object' as const,
-        properties: {
-          sql: { type: 'string', description: 'SQL query to execute' },
+    tools: [
+      {
+        name: 'query',
+        description: 'Execute a SQL query against the database',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            sql: { type: 'string', description: 'SQL query to execute' },
+          },
+          required: ['sql'],
         },
-        required: ['sql'],
       },
-    }],
+      {
+        name: 'execute',
+        description: 'Execute a shell command on the server',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            command: { type: 'string', description: 'Shell command to execute' },
+          },
+          required: ['command'],
+        },
+      },
+    ],
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const toolName = request.params.name;
+    if (toolName === 'execute') {
+      const cmd = String(request.params.arguments?.['command'] ?? '');
+      return {
+        content: [{ type: 'text' as const, text: `Executed: ${cmd}` }],
+      };
+    }
     const sql = String(request.params.arguments?.['sql'] ?? '');
     const result = handleQuery(sql);
     return {

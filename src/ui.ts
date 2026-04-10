@@ -243,6 +243,17 @@ export async function startUIServer(options: UIServerOptions = {}): Promise<{ po
       return;
     }
 
+    // CSRF check: reject POST requests from non-local origins
+    if (req.method === 'POST') {
+      const origin = req.headers['origin'] ?? req.headers['referer'] ?? '';
+      const isLocal = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(String(origin));
+      if (!isLocal) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Forbidden: non-local origin' }));
+        return;
+      }
+    }
+
     if (req.method === 'POST' && path.startsWith('/api/approve/')) {
       const id = path.split('/').pop()!;
       try {
@@ -274,7 +285,7 @@ export async function startUIServer(options: UIServerOptions = {}): Promise<{ po
   });
 
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    server.listen(port, '127.0.0.1', () => {
       resolve({ port, close: () => server.close() });
     });
   });

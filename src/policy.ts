@@ -12,6 +12,16 @@
 import type { PolicyRule, Action, PolicyResult, SemanticPattern } from './types.js';
 
 /**
+ * Action severity ranking — higher number is more restrictive.
+ * Used to pick the most restrictive action across compound statements.
+ */
+const ACTION_SEVERITY: Record<Action, number> = {
+  allow: 0,
+  approve: 1,
+  deny: 2,
+};
+
+/**
  * Built-in semantic patterns.
  * Each maps to a tool name pattern and argument matchers.
  */
@@ -40,12 +50,60 @@ const SEMANTIC_PATTERNS: Record<SemanticPattern, { tool: string; args: Record<st
     tool: '{delete_file,remove_directory}',
     args: {},
   },
+  'shell-safe': {
+    tool: '{execute,run_command,shell,exec,run}',
+    args: { command: '^\\s*(ls|pwd|whoami|echo|cat|head|tail|wc|date|uname)\\b' },
+  },
+  'shell-risky': {
+    tool: '{execute,run_command,shell,exec,run}',
+    args: { command: '^\\s*(mv|cp|mkdir|chmod|chown|curl|wget|npm|pip)\\b' },
+  },
+  'shell-destructive': {
+    tool: '{execute,run_command,shell,exec,run}',
+    args: { command: '^\\s*(rm|rmdir|kill|killall|shutdown|reboot|mkfs|dd|sudo)\\b' },
+  },
 };
 
 /**
  * Evaluate a tool call against a list of rules.
+ *
+ * For SQL args containing semicolons (compound statements like "SELECT 1; DROP TABLE x"),
+ * each sub-statement is evaluated independently and the most restrictive action wins.
+ *
+ * For shell commands containing compound operators (;, &&, ||, |),
+ * each sub-command is evaluated independently and the most restrictive action wins.
  */
 export function evaluate(
+  toolName: string,
+  args: Record<string, unknown>,
+  rules: PolicyRule[],
+  defaultAction: Action,
+): PolicyResult {
+  // Check for compound SQL statements (semicolon-separated)
+  const sqlValue = args?.['sql'] ?? args?.['query'];
+  if (typeof sqlValue === 'string' && sqlValue.includes(';')) {
+    const statements = sqlValue.split(';').map(s => s.trim()).filter(s => s.length > 0);
+    if (statements.length > 1) {
+      return evaluateCompound(toolName, args, 'sql', statements, rules, defaultAction);
+    }
+  }
+
+  // Check for compound shell commands (; && || |)
+  const cmdValue = args?.['command'] ?? args?.['cmd'];
+  if (typeof cmdValue === 'string' && /[;|&]/.test(cmdValue)) {
+    const commands = cmdValue.split(/\s*(?:;|&&|\|\||\|)\s*/).map(s => s.trim()).filter(s => s.length > 0);
+    if (commands.length > 1) {
+      return evaluateCompound(toolName, args, 'command', commands, rules, defaultAction);
+    }
+  }
+
+  return evaluateSingle(toolName, args, rules, defaultAction);
+}
+
+/**
+ * Evaluate a single (non-compound) tool call against rules.
+ */
+function evaluateSingle(
   toolName: string,
   args: Record<string, unknown>,
   rules: PolicyRule[],
@@ -67,6 +125,43 @@ export function evaluate(
     reason: `No rule matched — default action: ${defaultAction}`,
     explanation: explainDefault(toolName, args, defaultAction),
   };
+}
+
+/**
+ * Evaluate compound statements by splitting on separator, evaluating each
+ * sub-statement independently, and returning the most restrictive result.
+ */
+function evaluateCompound(
+  toolName: string,
+  args: Record<string, unknown>,
+  argKey: string,
+  statements: string[],
+  rules: PolicyRule[],
+  defaultAction: Action,
+): PolicyResult {
+  let worstResult: PolicyResult | null = null;
+  let worstSeverity = -1;
+
+  for (const stmt of statements) {
+    const subArgs = { ...args, [argKey]: stmt };
+    const result = evaluateSingle(toolName, subArgs, rules, defaultAction);
+    const severity = ACTION_SEVERITY[result.action];
+    if (severity > worstSeverity) {
+      worstSeverity = severity;
+      worstResult = result;
+    }
+  }
+
+  // Annotate explanation to mention compound evaluation
+  if (worstResult && statements.length > 1) {
+    const original = args[argKey] as string;
+    worstResult.explanation = worstResult.explanation +
+      ` (compound statement: ${statements.length} sub-statements evaluated, most restrictive applied)`;
+    // Override the explanation's tool call description to show the full original
+    worstResult.reason = worstResult.reason;
+  }
+
+  return worstResult!;
 }
 
 /**
@@ -134,6 +229,7 @@ function matchArgs(
   patterns: Record<string, string>,
   args: Record<string, unknown>,
 ): boolean {
+  if (!args || typeof args !== 'object') return false;
   for (const [key, pattern] of Object.entries(patterns)) {
     const value = args[key];
     if (value === undefined || value === null) return false;
@@ -183,6 +279,8 @@ function explainDefault(toolName: string, args: Record<string, unknown>, action:
  * Describe a tool call in plain language.
  */
 function describeToolCall(toolName: string, args: Record<string, unknown>): string {
+  if (!args || typeof args !== 'object') return `tool call: ${toolName}`;
+
   const sql = args['sql'] ?? args['query'];
   if (sql) {
     const s = String(sql).trim();
@@ -196,6 +294,13 @@ function describeToolCall(toolName: string, args: Record<string, unknown>): stri
     if (verb === 'ALTER') return `alter ${extractTarget(s)}`;
     if (verb === 'CREATE') return `create ${extractTarget(s)}`;
     return `SQL: ${s.length > 50 ? s.substring(0, 47) + '...' : s}`;
+  }
+
+  const cmd = args['command'] ?? args['cmd'];
+  if (cmd) {
+    const s = String(cmd).trim();
+    const firstToken = s.split(/\s+/)[0] ?? '';
+    return `${firstToken} command: ${s.length > 50 ? s.substring(0, 47) + '...' : s}`;
   }
 
   const path = args['path'] ?? args['file'] ?? args['uri'];

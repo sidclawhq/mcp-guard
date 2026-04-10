@@ -67,32 +67,10 @@ export async function runQuickstart(options: { uiPort?: number } = {}): Promise<
     w(`  \x1b[32m✔\x1b[0m Cleaned ${cleaned} stale approval(s)\n`);
   }
 
-  // 4. Start the approval dashboard
-  let dashboardUrl = '';
-  try {
-    const { port } = await startUIServer({
-      port: uiPort,
-      approvalDir: '.sidclaw/pending',
-      auditPath: '.sidclaw/audit.jsonl',
-    });
-    dashboardUrl = `http://localhost:${port}`;
-    w(`  \x1b[32m✔\x1b[0m Dashboard running at \x1b[1m${dashboardUrl}\x1b[0m\n`);
-  } catch (err) {
-    w(`  \x1b[33m!\x1b[0m Dashboard failed to start on port ${uiPort}: ${(err as Error).message}\n`);
-  }
-
-  w('\n');
-  w('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  w('\n');
-
-  // 5. Resolve the path to the mock server entry
+  // 4. Resolve the path to the mock server and write .mcp.json
   const cliPath = new URL(import.meta.url).pathname;
   const distDir = dirname(cliPath);
   const mockServerPath = resolve(distDir, 'mock-server.js');
-
-  // 6. Print the MCP config for the user to add
-  w('  \x1b[1mAdd this to your MCP client config:\x1b[0m\n');
-  w('\n');
 
   const mcpConfig = {
     mcpServers: {
@@ -107,14 +85,29 @@ export async function runQuickstart(options: { uiPort?: number } = {}): Promise<
       },
     },
   };
-  w(`  \x1b[2m${JSON.stringify(mcpConfig, null, 2).split('\n').join('\n  ')}\x1b[0m\n`);
-  w('\n');
-  w('  \x1b[2mFor Claude Code: add to ~/.claude/mcp.json\x1b[0m\n');
-  w('  \x1b[2mFor Cursor:      add to MCP server settings\x1b[0m\n');
+
+  const mcpJsonPath = resolve('.mcp.json');
+  writeFileSync(mcpJsonPath, JSON.stringify(mcpConfig, null, 2) + '\n');
+  w('  \x1b[32m✔\x1b[0m Wrote .mcp.json (MCP client config)\n');
+
+  // 5. Start the approval dashboard
+  let dashboardUrl = '';
+  try {
+    const { port } = await startUIServer({
+      port: uiPort,
+      approvalDir: '.sidclaw/pending',
+      auditPath: '.sidclaw/audit.jsonl',
+    });
+    dashboardUrl = `http://localhost:${port}`;
+    w(`  \x1b[32m✔\x1b[0m Dashboard running at \x1b[1m${dashboardUrl}\x1b[0m\n`);
+  } catch (err) {
+    w(`  \x1b[33m!\x1b[0m Dashboard failed to start on port ${uiPort}: ${(err as Error).message}\n`);
+  }
   w('\n');
   w('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   w('\n');
-  w('  \x1b[1mWhat happens next:\x1b[0m\n');
+  w('  \x1b[1mRestart Claude Code\x1b[0m to connect the guarded server.\n');
+  w('  \x1b[2mFor Cursor: copy .mcp.json contents into MCP server settings.\x1b[0m\n');
   w('\n');
   w('  Your AI agent will see a "query" tool. When it calls it:\n');
   w('\n');

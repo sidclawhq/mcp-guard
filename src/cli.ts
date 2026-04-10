@@ -2,8 +2,9 @@
  * SidClaw MCP Guard — CLI
  */
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig, defaultConfig } from './config.js';
 import { MCPGuard } from './guard.js';
 import { ApprovalQueue } from './approval.js';
@@ -12,7 +13,9 @@ import { runQuickstart } from './quickstart.js';
 import { startUIServer } from './ui.js';
 import type { GuardConfig } from './types.js';
 
-const VERSION = '0.1.0';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkgJson = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8'));
+const VERSION: string = pkgJson.version;
 
 function printHelp(): void {
   const w = process.stderr.write.bind(process.stderr);

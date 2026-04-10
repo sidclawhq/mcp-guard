@@ -39,5 +39,26 @@ rules:
     action: deny
     reason: "Destructive schema operations are blocked by policy"
 
+  # --- Shell command patterns (uncomment to guard shell tools) ---
+  #
+  # - name: allow-safe-shell
+  #   description: Safe read-only shell commands
+  #   match:
+  #     pattern: shell-safe
+  #   action: allow
+  #
+  # - name: approve-risky-shell
+  #   description: Risky shell commands need approval
+  #   match:
+  #     pattern: shell-risky
+  #   action: approve
+  #
+  # - name: deny-destructive-shell
+  #   description: Destructive shell commands are blocked
+  #   match:
+  #     pattern: shell-destructive
+  #   action: deny
+  #   reason: "Destructive shell commands are blocked by policy"
+
 # Default: deny anything not explicitly matched
 default: deny

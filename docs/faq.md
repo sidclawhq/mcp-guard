@@ -26,7 +26,7 @@ Any client that supports stdio MCP servers:
 - Cursor
 - Windsurf
 - Continue
-- Any OpenClaw-compatible client
+- Any MCP-compatible client
 
 ## Policies
 

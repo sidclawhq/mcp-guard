@@ -11,15 +11,15 @@ npx sidclaw-mcp-guard@latest demo
 ```
 
 You'll see three SQL queries evaluated against the guard:
-- `SELECT` — allowed
-- `DELETE` — held for approval (auto-approved after 3s in demo mode)
-- `DROP TABLE` — denied
+- `SELECT` — allowed (ALLOW)
+- `DELETE` — held for approval (HOLD)
+- `DROP TABLE` — denied (BLOCK)
 
 ## 2. Guard a real MCP server
 
 ### Option A: Add to your MCP client config
 
-For Claude Code, add to your MCP settings:
+For Claude Code, add to `.mcp.json` in your project root:
 
 ```json
 {
@@ -86,7 +86,8 @@ npx sidclaw-mcp-guard@latest
 When a tool call requires approval, the guard logs to stderr:
 
 ```
-⏳ APPROVAL REQUIRED  query  DELETE FROM users WHERE id = 42
+⏳ HOLD    DELETE FROM users WHERE id = 42
+  Held for approval: delete from users. Data changes need approval.
   Approve: npx sidclaw-mcp-guard approve a1b2c3d4
   Deny:    npx sidclaw-mcp-guard deny a1b2c3d4
 ```

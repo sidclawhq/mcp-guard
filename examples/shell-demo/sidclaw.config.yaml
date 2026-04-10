@@ -1,0 +1,33 @@
+# Shell Demo — Guard a shell-execution MCP server
+#
+# This config protects a system from dangerous shell commands run by AI agents.
+# Works with any MCP server that exposes an "execute", "run_command", "shell",
+# "exec", or "run" tool with a "command" argument.
+#
+# Compound commands (e.g. "ls /tmp && rm -rf /") are split on ;, &&, ||, |
+# and each sub-command is evaluated. The most restrictive action wins.
+
+rules:
+  # Safe: read-only commands that don't modify anything
+  - name: allow-safe-commands
+    description: Safe read-only shell commands
+    match:
+      pattern: shell-safe
+    action: allow
+
+  # Risky: commands that modify files or make network requests
+  - name: approve-risky-commands
+    description: Risky shell commands need human approval
+    match:
+      pattern: shell-risky
+    action: approve
+
+  # Dangerous: destructive or privileged commands
+  - name: deny-destructive-commands
+    description: Destructive shell commands are never allowed
+    match:
+      pattern: shell-destructive
+    action: deny
+    reason: "Destructive shell commands are blocked by policy"
+
+default: deny

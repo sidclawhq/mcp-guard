@@ -26,36 +26,33 @@ No database needed — the demo simulates the tool calls locally.
 
 **Test 1: `SELECT * FROM users`**
 ```
-✔ ALLOWED  Rule: allow-reads
-→ Forwarded to upstream PostgreSQL
-→ Result: [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]
+✔ ALLOW   SELECT * FROM users
+         Allowed: read query on users. Read-only queries are safe.
+         → 3 rows returned
 ```
 
 **Test 2: `DELETE FROM users WHERE id = 42`**
 ```
-⏳ APPROVAL REQUIRED  Rule: approve-mutations
-  The agent is paused, waiting for a human decision.
-  [Auto-approving in 3s for demo...]
-✔ APPROVED → Forwarded to upstream
-→ Result: 1 row affected
+⏳ HOLD    DELETE FROM users WHERE id = 42
+         Held for approval: delete from users. Data changes need approval.
+         → Would forward after approval: 1 row deleted
 ```
 
 **Test 3: `DROP TABLE users`**
 ```
-✘ DENIED  Rule: deny-destructive
-  Reason: Destructive schema operations are blocked by policy
-  → The agent receives an error. The query never reaches the database.
+✘ BLOCK   DROP TABLE users
+         Blocked: drop users. Schema changes are never allowed.
 ```
 
 ## Interactive mode
 
-For a more realistic demo where you manually approve/deny:
+Try your own SQL queries and see how the guard classifies them:
 
 ```bash
-npx sidclaw-mcp-guard demo --interactive
+npx sidclaw-mcp-guard demo -i
 ```
 
-At the approval step, you'll be prompted to approve or deny.
+After the three showcase queries, you get a `sql>` prompt to type your own.
 
 ## Try with a real database
 

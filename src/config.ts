@@ -10,7 +10,26 @@ const VALID_ACTIONS: Action[] = ['allow', 'deny', 'approve'];
 const VALID_PATTERNS: SemanticPattern[] = [
   'sql-read', 'sql-write', 'sql-destructive',
   'file-read', 'file-write', 'file-delete',
+  'shell-safe', 'shell-risky', 'shell-destructive',
 ];
+
+/**
+ * Validate that a regex pattern is safe to use.
+ * Creates the regex and tests it against a short string to catch obvious issues.
+ * Throws if the regex is invalid.
+ */
+function validateRegex(pattern: string, ruleName: string, argKey: string): void {
+  try {
+    const re = new RegExp(pattern, 'i');
+    // Test against a short string to catch catastrophic backtracking on simple input.
+    // This won't catch all ReDoS but covers the most common cases.
+    re.test('a'.repeat(25));
+  } catch (e) {
+    throw new Error(
+      `Rule '${ruleName}' has invalid regex for args.${argKey}: ${(e as Error).message}`,
+    );
+  }
+}
 
 /**
  * Load guard config from a YAML file.
@@ -76,13 +95,23 @@ function parseRules(raw: unknown): PolicyRule[] {
       }
     }
 
+    // Validate regex patterns in args at config load time
+    const argsRaw = match['args'] as Record<string, string> | undefined;
+    if (argsRaw && typeof argsRaw === 'object') {
+      for (const [argKey, argPattern] of Object.entries(argsRaw)) {
+        if (typeof argPattern === 'string') {
+          validateRegex(argPattern, r['name'] as string, argKey);
+        }
+      }
+    }
+
     return {
       name: r['name'] as string,
       description: r['description'] as string | undefined,
       match: {
         tool: (match['tool'] as string) || '*',
         pattern,
-        args: match['args'] as Record<string, string> | undefined,
+        args: argsRaw,
       },
       action,
       reason: r['reason'] as string | undefined,

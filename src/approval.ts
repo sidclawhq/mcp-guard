@@ -73,7 +73,7 @@ export class ApprovalQueue {
     try {
       const data = JSON.parse(readFileSync(filePath, 'utf-8')) as PendingApproval;
       if (!data.decision) {
-        data.decision = 'denied';
+        data.decision = 'expired';
         data.decided_at = new Date().toISOString();
         writeFileSync(filePath, JSON.stringify(data, null, 2));
       }

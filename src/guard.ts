@@ -8,6 +8,9 @@
  * for human approval.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -26,6 +29,10 @@ import { AuditLog } from './audit.js';
 import { ApprovalQueue } from './approval.js';
 import { SID_MINI, sidReaction } from './banner.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkgJson = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8'));
+const PKG_VERSION: string = pkgJson.version;
+
 export class MCPGuard {
   private server: Server;
   private upstream: Client;
@@ -37,12 +44,12 @@ export class MCPGuard {
     this.config = config;
 
     this.server = new Server(
-      { name: 'sidclaw-mcp-guard', version: '0.1.0' },
+      { name: 'sidclaw-mcp-guard', version: PKG_VERSION },
       { capabilities: { tools: {}, resources: {}, prompts: {} } },
     );
 
     this.upstream = new Client(
-      { name: 'sidclaw-guard-client', version: '0.1.0' },
+      { name: 'sidclaw-guard-client', version: PKG_VERSION },
       {},
     );
 
@@ -285,16 +292,5 @@ export class MCPGuard {
   /** Log to stderr (stdout is MCP protocol). */
   private log(msg: string): void {
     process.stderr.write(`[sidclaw] ${msg}\n`);
-  }
-
-  /** Summarize args for log display. */
-  private summarize(args: Record<string, unknown>): string {
-    const sql = args['sql'] ?? args['query'];
-    if (sql) {
-      const s = String(sql).trim();
-      return s.length > 80 ? s.substring(0, 77) + '...' : s;
-    }
-    const j = JSON.stringify(args);
-    return j.length > 80 ? j.substring(0, 77) + '...' : j;
   }
 }

@@ -11,7 +11,7 @@ import { AuditLog } from './audit.js';
 import { SID_BANNER, fmtAllow, fmtHold, fmtBlock } from './banner.js';
 import type { PolicyRule } from './types.js';
 
-const DEMO_RULES: PolicyRule[] = [
+const SQL_RULES: PolicyRule[] = [
   {
     name: 'allow-reads',
     description: 'Read-only queries are safe',
@@ -33,15 +33,47 @@ const DEMO_RULES: PolicyRule[] = [
   },
 ];
 
+const SHELL_RULES: PolicyRule[] = [
+  {
+    name: 'allow-safe-shell',
+    description: 'Safe shell commands are allowed',
+    match: { tool: 'execute', pattern: 'shell-safe' },
+    action: 'allow',
+  },
+  {
+    name: 'approve-risky-shell',
+    description: 'Risky shell commands need approval',
+    match: { tool: 'execute', pattern: 'shell-risky' },
+    action: 'approve',
+  },
+  {
+    name: 'deny-destructive-shell',
+    description: 'Destructive shell commands are never allowed',
+    match: { tool: 'execute', pattern: 'shell-destructive' },
+    action: 'deny',
+    reason: 'Destructive shell commands are blocked by policy',
+  },
+];
+
+const DEMO_RULES: PolicyRule[] = [...SQL_RULES, ...SHELL_RULES];
+
 interface DemoCase {
-  sql: string;
+  tool: string;
+  args: Record<string, unknown>;
+  label: string;
   mockResult?: string;
 }
 
-const SHOWCASE: DemoCase[] = [
-  { sql: 'SELECT * FROM users', mockResult: '3 rows returned' },
-  { sql: 'DELETE FROM users WHERE id = 42', mockResult: '1 row deleted' },
-  { sql: 'DROP TABLE users' },
+const SQL_SHOWCASE: DemoCase[] = [
+  { tool: 'query', args: { sql: 'SELECT * FROM users' }, label: 'SELECT * FROM users', mockResult: '3 rows returned' },
+  { tool: 'query', args: { sql: 'DELETE FROM users WHERE id = 42' }, label: 'DELETE FROM users WHERE id = 42', mockResult: '1 row deleted' },
+  { tool: 'query', args: { sql: 'DROP TABLE users' }, label: 'DROP TABLE users' },
+];
+
+const SHELL_SHOWCASE: DemoCase[] = [
+  { tool: 'execute', args: { command: 'ls /home/user/projects' }, label: 'ls /home/user/projects', mockResult: 'list directory contents' },
+  { tool: 'execute', args: { command: 'curl https://api.stripe.com/charges -X POST' }, label: 'curl https://api.stripe.com/charges -X POST', mockResult: 'network request' },
+  { tool: 'execute', args: { command: 'rm -rf /' }, label: 'rm -rf /' },
 ];
 
 export async function runDemo(interactive: boolean = false): Promise<void> {
@@ -52,7 +84,7 @@ export async function runDemo(interactive: boolean = false): Promise<void> {
   const audit = new AuditLog('.sidclaw/audit.jsonl');
 
   w(SID_BANNER);
-  w('  \x1b[2mPolicy engine is real · database is simulated\x1b[0m\n\n');
+  w('  \x1b[2mPolicy engine is real · upstream is simulated\x1b[0m\n\n');
   w('  \x1b[2mAgent  →  \x1b[0m\x1b[34mGuard\x1b[0m\x1b[2m  →  Upstream\x1b[0m\n');
   w('  \x1b[2m          ↓ allow / hold / block\x1b[0m\n\n');
   w('  \x1b[2m───────────────────────────────────────────────\x1b[0m\n\n');
@@ -78,8 +110,14 @@ async function showcaseMode(
   w: (s: string) => boolean,
   audit: AuditLog,
 ): Promise<void> {
-  for (const test of SHOWCASE) {
-    evaluateAndPrint(w, audit, test.sql, test.mockResult);
+  w('  \x1b[1mSQL queries:\x1b[0m\n\n');
+  for (const test of SQL_SHOWCASE) {
+    evaluateAndPrint(w, audit, test.tool, test.args, test.label, test.mockResult);
+  }
+
+  w('  \x1b[1mShell commands:\x1b[0m\n\n');
+  for (const test of SHELL_SHOWCASE) {
+    evaluateAndPrint(w, audit, test.tool, test.args, test.label, test.mockResult);
   }
 }
 
@@ -89,9 +127,15 @@ async function interactiveMode(
 ): Promise<void> {
   const readline = await import('node:readline');
 
-  // Show the three showcase queries first
-  for (const test of SHOWCASE) {
-    evaluateAndPrint(w, audit, test.sql, test.mockResult);
+  // Show all showcase queries first
+  w('  \x1b[1mSQL queries:\x1b[0m\n\n');
+  for (const test of SQL_SHOWCASE) {
+    evaluateAndPrint(w, audit, test.tool, test.args, test.label, test.mockResult);
+  }
+
+  w('  \x1b[1mShell commands:\x1b[0m\n\n');
+  for (const test of SHELL_SHOWCASE) {
+    evaluateAndPrint(w, audit, test.tool, test.args, test.label, test.mockResult);
   }
 
   // Then let the user try their own
@@ -106,7 +150,7 @@ async function interactiveMode(
     rl.on('line', (line: string) => {
       const sql = line.trim();
       if (!sql || sql === 'exit' || sql === 'quit') { rl.close(); resolve(); return; }
-      evaluateAndPrint(w, audit, sql);
+      evaluateAndPrint(w, audit, 'query', { sql }, sql);
       rl.prompt();
     });
     rl.on('close', resolve);
@@ -118,25 +162,27 @@ async function interactiveMode(
 function evaluateAndPrint(
   w: (s: string) => boolean,
   audit: AuditLog,
-  sql: string,
+  tool: string,
+  args: Record<string, unknown>,
+  label: string,
   mockResult?: string,
 ): void {
-  const result = evaluate('query', { sql }, DEMO_RULES, 'deny');
+  const result = evaluate(tool, args, DEMO_RULES, 'deny');
 
   if (result.action === 'allow') {
-    w(fmtAllow(sql, result.explanation ?? '', mockResult));
+    w(fmtAllow(label, result.explanation ?? '', mockResult));
   } else if (result.action === 'approve') {
-    w(fmtHold(sql, result.explanation ?? '', mockResult));
+    w(fmtHold(label, result.explanation ?? '', mockResult));
   } else {
-    w(fmtBlock(sql, result.explanation ?? ''));
+    w(fmtBlock(label, result.explanation ?? ''));
   }
 
   w('\n');
 
   audit.write({
     timestamp: new Date().toISOString(),
-    tool: 'query',
-    args: { sql },
+    tool,
+    args,
     decision: result.action,
     rule: result.rule?.name,
     reason: result.reason,

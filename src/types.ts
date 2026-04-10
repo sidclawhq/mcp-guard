@@ -18,7 +18,10 @@ export type SemanticPattern =
   | 'sql-destructive'
   | 'file-read'
   | 'file-write'
-  | 'file-delete';
+  | 'file-delete'
+  | 'shell-safe'
+  | 'shell-risky'
+  | 'shell-destructive';
 
 /** A single policy rule. */
 export interface PolicyRule {
@@ -107,6 +110,6 @@ export interface PendingApproval {
   reason?: string;
   /** Plain-English explanation of why approval is needed. */
   explanation?: string;
-  decision?: 'approved' | 'denied';
+  decision?: 'approved' | 'denied' | 'expired';
   decided_at?: string;
 }
