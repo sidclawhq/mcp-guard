@@ -39,6 +39,10 @@ const MAX_SHELL_DEPTH = 50;
  * Each maps to a tool name pattern and argument matchers.
  */
 const SEMANTIC_PATTERNS: Record<SemanticPattern, { tool: string; args: Record<string, string> }> = {
+  // NOTE: the sql-* `args` regexes are illustrative only — they show the leading
+  // keywords each tier covers. Actual matching is done by classifySqlTier (a
+  // quote/comment-aware scan of the whole statement), not by these prefixes, so a
+  // read-led statement that performs a write/DDL is still classified correctly.
   'sql-read': {
     tool: 'query',
     args: { sql: '^\\s*(SELECT|EXPLAIN|SHOW|DESCRIBE|WITH)\\b' },
@@ -213,11 +217,8 @@ function evaluateCompound(
 
   // Annotate explanation to mention compound evaluation
   if (worstResult && statements.length > 1) {
-    const original = args[argKey] as string;
     worstResult.explanation = worstResult.explanation +
       ` (compound statement: ${statements.length} sub-statements evaluated, most restrictive applied)`;
-    // Override the explanation's tool call description to show the full original
-    worstResult.reason = worstResult.reason;
   }
 
   return worstResult!;
