@@ -1,6 +1,6 @@
 {
   "name": "sidclaw-mcp-guard",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Stop AI agents from doing dangerous things through MCP. Guard any MCP server with allow/deny/approve policies.",
   "type": "module",
   "license": "Apache-2.0",
@@ -49,7 +49,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node test.mjs",
     "demo": "node dist/cli.js demo",
-    "clean": "rm -rf dist .sidclaw"
+    "clean": "rm -rf dist .sidclaw",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "engines": {
     "node": ">=20"

