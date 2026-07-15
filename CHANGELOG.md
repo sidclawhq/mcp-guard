@@ -4,14 +4,16 @@ All notable changes to `sidclaw-mcp-guard` are documented here. This project
 adheres to [Semantic Versioning](https://semver.org/) and the
 [Keep a Changelog](https://keepachangelog.com/) format.
 
-## [0.1.3] — Unreleased
+## [0.1.3] — 2026-07-14
 
 ### Security
 
 Fixes two policy-engine bypasses in `src/policy.ts` where a call that should be
 **denied** or **held for approval** could be classified **allow** and forwarded to
 the wrapped server. Both the deny gate and the approval gate were affected.
-See the accompanying security advisory (GHSA / CVE: _pending_).
+See the security advisory
+[GHSA-3wv6-xgp3-3g62](https://github.com/sidclawhq/mcp-guard/security/advisories/GHSA-3wv6-xgp3-3g62)
+(CVE requested; ID pending assignment).
 
 - **Shell metacharacter bypass.** Compound-command detection triggered only on
   `; | &`, and the "safe verb" match was an unanchored prefix, so a blocked
